@@ -747,22 +747,78 @@ function saveStoredExpandedPaths(workspaceRoot: string | undefined, paths: Set<s
 }
 
 /**
- * 尝试通过 DSH 官方 conversation.input 服务直接向会话输入框插入原生的 ReferenceChipNode（官方胶囊卡片）
+ * 从当前 DOM 的 React Fiber 树或 Cordis RootContext 中提取当前活跃输入框的 SessionInputShell 实例
+ */
+function findComposerShell(ctx: Context | null, sessionId?: string): any {
+  // 1. 优先从 DOM 的 React Fiber 提取（直接命中当前活跃输入框的组件 props）
+  try {
+    const composerDom = document.querySelector<HTMLElement>(
+      '[data-composer-input="true"], [data-composer-input], [data-composer-card], div[role="textbox"][contenteditable="true"]'
+    )
+    if (composerDom) {
+      const fiberKey = Object.keys(composerDom).find(k => k.startsWith('__reactFiber') || k.startsWith('__reactInternalInstance'))
+      if (fiberKey) {
+        let curr = (composerDom as any)[fiberKey]
+        let depth = 0
+        while (curr && depth < 25) {
+          const p = curr.memoizedProps
+          if (p) {
+            if (p.keyboard && typeof p.keyboard.insertReference === 'function') {
+              return p.keyboard
+            }
+            if (p.shell && typeof p.shell.insertReference === 'function') {
+              return p.shell
+            }
+          }
+          curr = curr.return
+          depth++
+        }
+      }
+    }
+  } catch (e) {
+    console.debug('[dsh-workspace-files] 从 Fiber 查找 keyboard 失败:', e)
+  }
+
+  // 2. 从 Cordis RootContext 查找
+  if (ctx) {
+    try {
+      const root: any = (ctx as any).root || ctx
+      const conversation = root.conversation || root.get?.('conversation') || (window as any).__dsh_conversation
+      const inputService = conversation?.input || root['conversation.input'] || root.get?.('conversation.input')
+      if (inputService) {
+        if (sessionId) {
+          const s = inputService.shell?.(sessionId) || inputService.shells?.get?.(sessionId)
+          if (s) return s
+        }
+        if (inputService.shells instanceof Map && inputService.shells.size > 0) {
+          const values = Array.from(inputService.shells.values())
+          return values[values.length - 1]
+        }
+      }
+    } catch (e) {
+      console.debug('[dsh-workspace-files] 从 RootContext 查找 shell 失败:', e)
+    }
+  }
+
+  return null
+}
+
+/**
+ * 尝试向会话输入框插入原生的 ReferenceChipNode（官方胶囊 Tag 卡片）
  */
 function tryInsertNativeReferenceChip(ctx: Context | null, sessionId: string | undefined, item: FileItem): boolean {
-  if (!ctx || !sessionId) return false
+  if (typeof document === 'undefined') return false
   try {
-    const conversation = (ctx as any).conversation || (ctx as any).get?.('conversation')
-    const inputService = conversation?.input || (ctx as any)['conversation.input'] || (ctx as any).get?.('conversation.input')
-    if (!inputService) return false
-
-    // 获取当前会话的 SessionInputShell
-    const shell = inputService.shell?.(sessionId) || inputService.shells?.get?.(sessionId)
-    if (!shell) return false
-
     // 聚焦输入框
-    const composerDom = document.querySelector<HTMLElement>('[data-composer-input="true"], [data-composer-input]')
+    const composerDom = document.querySelector<HTMLElement>(
+      '[data-composer-input="true"], [data-composer-input], [data-composer-card] [contenteditable="true"], div[role="textbox"][contenteditable="true"]'
+    )
     if (composerDom) composerDom.focus()
+
+    const shell = findComposerShell(ctx, sessionId)
+    if (!shell) {
+      return false
+    }
 
     const cleanPath = item.path.replace(/\\/g, '/').replace(/^\.?\//, '')
     const mention = item.isDirectory ? (cleanPath.endsWith('/') ? `@${cleanPath}` : `@${cleanPath}/`) : `@${cleanPath}`
@@ -777,11 +833,11 @@ function tryInsertNativeReferenceChip(ctx: Context | null, sessionId: string | u
     }
 
     const text = shell.projection?.detectText || ''
-    let caret = shell.projection?.caret ?? text.length
+    let caret = typeof shell.projection?.caret === 'number' ? shell.projection.caret : text.length
     let start = caret
     const end = caret
 
-    // 智能消除：若当前光标前是 '@'，回退一个字符将其替换
+    // 智能消除：若当前光标前是 '@'，回退一个字符将其吃掉替换
     if (start > 0 && text[start - 1] === '@') {
       start = start - 1
     }
@@ -792,6 +848,7 @@ function tryInsertNativeReferenceChip(ctx: Context | null, sessionId: string | u
       end,
     }
 
+    // 优先调用原生 shell.insertReference 插入 Chip Tag
     if (typeof shell.insertReference === 'function') {
       const ok = shell.insertReference(reference, span)
       if (ok) return true
@@ -804,7 +861,7 @@ function tryInsertNativeReferenceChip(ctx: Context | null, sessionId: string | u
       if (ok === true) return true
     }
   } catch (err) {
-    console.debug('[dsh-workspace-files] 插入原生 Chip 异常，降级纯文本:', err)
+    console.debug('[dsh-workspace-files] 插入原生 Chip 异常:', err)
   }
   return false
 }
