@@ -13,8 +13,10 @@ import {
   IconCopy,
   IconExpandAll,
   IconFolder,
+  IconList,
   IconRefresh,
   IconSearch,
+  IconTree,
 } from './icons.js'
 
 export const inject = ['slots', 'sidebarRightTabs']
@@ -240,12 +242,31 @@ function WorkspaceFilesView({
     })
   }
 
-  // 过滤树
-  const filteredItems = useMemo(() => {
-    if (!data) return []
-    const q = query.trim().toLowerCase()
-    if (!q) return data.items
+  const [searchViewMode, setSearchViewMode] = useState<'flat' | 'tree'>('flat')
+  const [searchExpandedPaths, setSearchExpandedPaths] = useState<Set<string>>(() => new Set())
 
+  // 过滤树与扁平结果
+  const { filteredTreeItems, flatSearchResults } = useMemo(() => {
+    if (!data) return { filteredTreeItems: [], flatSearchResults: [] }
+    const q = query.trim().toLowerCase()
+    if (!q) return { filteredTreeItems: data.items, flatSearchResults: [] }
+
+    // 扁平结果列表
+    const flat: Array<{ item: FileItem; parentDir: string }> = []
+    function traverseFlat(items: FileItem[], parentDir: string) {
+      for (const it of items) {
+        const match = it.name.toLowerCase().includes(q) || it.path.toLowerCase().includes(q)
+        if (match) {
+          flat.push({ item: it, parentDir })
+        }
+        if (it.isDirectory && it.children) {
+          traverseFlat(it.children, it.path)
+        }
+      }
+    }
+    traverseFlat(data.items, '')
+
+    // 树形过滤集合
     function filterNode(node: FileItem): FileItem | null {
       const selfMatch = node.name.toLowerCase().includes(q) || node.path.toLowerCase().includes(q)
       if (node.isDirectory) {
@@ -262,13 +283,35 @@ function WorkspaceFilesView({
       return selfMatch ? node : null
     }
 
-    const res: FileItem[] = []
+    const tree: FileItem[] = []
     for (const rootNode of data.items) {
       const matched = filterNode(rootNode)
-      if (matched) res.push(matched)
+      if (matched) tree.push(matched)
     }
-    return res
+
+    return { filteredTreeItems: tree, flatSearchResults: flat }
   }, [data, query])
+
+  // 搜索关键字变化时，自动展开匹配的目录树节点，并允许用户后续自由折叠/展开
+  useEffect(() => {
+    if (!query.trim() || !data) return
+    const q = query.trim().toLowerCase()
+    const autoExpand = new Set<string>()
+    function collect(items: FileItem[]) {
+      for (const it of items) {
+        if (it.isDirectory) {
+          const selfMatch = it.name.toLowerCase().includes(q) || it.path.toLowerCase().includes(q)
+          const childMatch = it.children?.some(c => c.name.toLowerCase().includes(q) || c.path.toLowerCase().includes(q))
+          if (selfMatch || childMatch) autoExpand.add(it.path)
+          if (it.children) collect(it.children)
+        }
+      }
+    }
+    collect(data.items)
+    setSearchExpandedPaths(autoExpand)
+  }, [query, data])
+
+  const isSearchActive = Boolean(query.trim())
 
   return (
     <div className="dsh-files-root">
@@ -318,22 +361,36 @@ function WorkspaceFilesView({
         </div>
 
         <div className="dsh-files-toolbar-btns">
-          <button
-            type="button"
-            className="dsh-files-tool-btn"
-            onClick={handleExpandAll}
-            title="全部展开"
-          >
-            <IconExpandAll size={13} />
-          </button>
-          <button
-            type="button"
-            className="dsh-files-tool-btn"
-            onClick={handleCollapseAll}
-            title="全部折叠"
-          >
-            <IconCollapseAll size={13} />
-          </button>
+          {isSearchActive ? (
+            <button
+              type="button"
+              className="dsh-files-tool-btn is-active"
+              onClick={() => setSearchViewMode(searchViewMode === 'flat' ? 'tree' : 'flat')}
+              title={searchViewMode === 'flat' ? '当前为扁平列表，点击切换为树形视图' : '当前为树形视图，点击切换为扁平列表'}
+            >
+              {searchViewMode === 'flat' ? <IconTree size={13} /> : <IconList size={13} />}
+            </button>
+          ) : (
+            <>
+              <button
+                type="button"
+                className="dsh-files-tool-btn"
+                onClick={handleExpandAll}
+                title="全部展开"
+              >
+                <IconExpandAll size={13} />
+              </button>
+              <button
+                type="button"
+                className="dsh-files-tool-btn"
+                onClick={handleCollapseAll}
+                title="全部折叠"
+              >
+                <IconCollapseAll size={13} />
+              </button>
+            </>
+          )}
+
           <button
             type="button"
             className={`dsh-files-tool-btn ${showHidden ? 'is-active' : ''}`}
@@ -364,32 +421,127 @@ function WorkspaceFilesView({
         </div>
       )}
 
-      {/* Tree Content */}
+      {/* Tree / Search Results Content */}
       <div className="dsh-files-body">
         {loading && !data ? (
           <div className="dsh-files-centered">
             <div className="dsh-files-spinner" />
             <span>加载工作区文件…</span>
           </div>
-        ) : filteredItems.length === 0 ? (
+        ) : isSearchActive && flatSearchResults.length === 0 ? (
           <div className="dsh-files-empty">
             <div className="dsh-files-empty-icon"><IconFolder size={26} /></div>
-            <div className="dsh-files-empty-title">{query ? '未搜索到匹配的文件' : '工作区为空'}</div>
-            <div className="dsh-files-empty-detail">
-              {query ? '请尝试更换搜索关键字' : '当前工作目录下暂无可显示的文件。'}
+            <div className="dsh-files-empty-title">未搜索到匹配的文件</div>
+            <div className="dsh-files-empty-detail">请尝试更换搜索关键字，或按 Esc 清除搜索。</div>
+          </div>
+        ) : !isSearchActive && (!data || data.items.length === 0) ? (
+          <div className="dsh-files-empty">
+            <div className="dsh-files-empty-icon"><IconFolder size={26} /></div>
+            <div className="dsh-files-empty-title">工作区为空</div>
+            <div className="dsh-files-empty-detail">当前工作目录下暂无可显示的文件。</div>
+          </div>
+        ) : isSearchActive && searchViewMode === 'flat' ? (
+          /* ── 扁平搜索结果列表 ── */
+          <div className="dsh-files-search-container">
+            <div className="dsh-files-search-header">
+              <span className="dsh-files-search-count">找到 {flatSearchResults.length} 个匹配项</span>
+              <button
+                type="button"
+                className="dsh-files-view-toggle-btn"
+                onClick={() => setSearchViewMode('tree')}
+                title="切换为可折叠的树形视图"
+              >
+                <IconTree size={12} />
+                <span>切为树形</span>
+              </button>
+            </div>
+            <div className="dsh-files-flat-list">
+              {flatSearchResults.map(({ item, parentDir }) => (
+                <div
+                  key={item.path}
+                  className="dsh-files-flat-row"
+                  onClick={() => !item.isDirectory && onOpenFile(item.path)}
+                  title={`点击打开: ${item.path}`}
+                >
+                  <span className="dsh-files-flat-icon">
+                    {item.isDirectory ? <IconFolder size={14} /> : <FileGlyphIcon filename={item.name} size={14} />}
+                  </span>
+                  <div className="dsh-files-flat-info">
+                    <div className="dsh-files-flat-top">
+                      <span className="dsh-files-flat-name">
+                        <HighlightText text={item.name} query={query} />
+                        {item.isDirectory && '/'}
+                      </span>
+                      {item.size !== undefined && (
+                        <span className="dsh-files-size">{formatFileSize(item.size)}</span>
+                      )}
+                    </div>
+                    {parentDir && (
+                      <div className="dsh-files-flat-parent" title={parentDir}>
+                        {parentDir}
+                      </div>
+                    )}
+                  </div>
+                  <div className="dsh-files-row-actions">
+                    <button
+                      type="button"
+                      className="dsh-files-action-btn dsh-files-action-at"
+                      onClick={e => handleMention(e, item)}
+                      title={`一键 @ 引用此${item.isDirectory ? '目录' : '文件'}到当前会话`}
+                    >
+                      <IconAt size={13} />
+                      <span className="dsh-files-action-at-text">@引用</span>
+                    </button>
+                    <button
+                      type="button"
+                      className="dsh-files-action-btn"
+                      onClick={e => handleCopyPath(e, item.path)}
+                      title="复制相对路径"
+                    >
+                      <IconCopy size={12} />
+                    </button>
+                  </div>
+                </div>
+              ))}
             </div>
           </div>
         ) : (
+          /* ── 树形视图（普通模式或搜索树模式） ── */
           <div className="dsh-files-tree">
-            {filteredItems.map(item => (
+            {isSearchActive && (
+              <div className="dsh-files-search-header">
+                <span className="dsh-files-search-count">树形匹配（自由折叠/展开）</span>
+                <button
+                  type="button"
+                  className="dsh-files-view-toggle-btn"
+                  onClick={() => setSearchViewMode('flat')}
+                  title="切换为扁平搜索结果列表"
+                >
+                  <IconList size={12} />
+                  <span>切为列表</span>
+                </button>
+              </div>
+            )}
+            {filteredTreeItems.map(item => (
               <FileTreeNode
                 key={item.path}
                 item={item}
                 depth={0}
                 query={query}
-                isSearchMode={Boolean(query.trim())}
-                expandedPaths={expandedPaths}
-                onToggleExpand={handleToggleExpand}
+                isSearchMode={isSearchActive}
+                expandedPaths={isSearchActive ? searchExpandedPaths : expandedPaths}
+                onToggleExpand={(path: string) => {
+                  if (isSearchActive) {
+                    setSearchExpandedPaths(prev => {
+                      const next = new Set(prev)
+                      if (next.has(path)) next.delete(path)
+                      else next.add(path)
+                      return next
+                    })
+                  } else {
+                    handleToggleExpand(path)
+                  }
+                }}
                 onOpenFile={onOpenFile}
                 onMention={handleMention}
                 onCopyPath={handleCopyPath}
@@ -423,7 +575,7 @@ function FileTreeNode(props: {
   onCopyPath: (e: React.MouseEvent, path: string) => void
 }): JSX.Element {
   const { item, depth, query, isSearchMode, expandedPaths, onToggleExpand, onOpenFile, onMention, onCopyPath } = props
-  const isExpanded = isSearchMode ? true : expandedPaths.has(item.path)
+  const isExpanded = expandedPaths.has(item.path)
 
   if (item.isDirectory) {
     const childCount = item.children?.length ?? 0
@@ -968,6 +1120,7 @@ function GlobalFilesStyle(): JSX.Element {
   padding-right: 8px;
   cursor: pointer;
   user-select: none;
+  position: relative;
   color: var(--dsw-alias-label-secondary, #6f7f9b);
   transition: background 0.12s ease;
 }
@@ -1035,17 +1188,113 @@ function GlobalFilesStyle(): JSX.Element {
   flex-shrink: 0;
   margin-right: 4px;
 }
+
+/* ── Hover Actions on Rows ── */
 .dsh-files-row-actions {
   display: none;
   align-items: center;
   gap: 3px;
   flex-shrink: 0;
 }
-.dsh-files-row:hover .dsh-files-row-actions {
+.dsh-files-row:hover .dsh-files-row-actions,
+.dsh-files-dir-row:hover .dsh-files-row-actions,
+.dsh-files-flat-row:hover .dsh-files-row-actions {
   display: flex;
 }
-.dsh-files-row:hover .dsh-files-size {
+.dsh-files-row:hover .dsh-files-size,
+.dsh-files-dir-row:hover .dsh-files-count-badge,
+.dsh-files-flat-row:hover .dsh-files-size {
   display: none;
+}
+
+/* ── Flat Search Result List ── */
+.dsh-files-search-container {
+  display: flex;
+  flex-direction: column;
+}
+.dsh-files-search-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 6px 12px;
+  font-size: 11px;
+  color: var(--dsw-alias-label-tertiary, #8c9ba5);
+  background: color-mix(in srgb, var(--dsw-alias-brand-primary, #4b70e2) 4%, transparent);
+  border-bottom: 1px solid var(--dsw-alias-border-l1, rgba(118,137,166,.15));
+}
+.dsh-files-search-count {
+  font-weight: 500;
+}
+.dsh-files-view-toggle-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  border: 1px solid var(--dsw-alias-border-l2, rgba(118,137,166,.25));
+  background: var(--dsw-alias-container-bg, var(--dsw-alias-bg-base, #ffffff));
+  color: var(--dsw-alias-brand-primary, #4b70e2);
+  cursor: pointer;
+  font-size: 10.5px;
+  font-weight: 500;
+  padding: 2px 7px;
+  border-radius: 4px;
+  transition: all 0.12s ease;
+}
+.dsh-files-view-toggle-btn:hover {
+  background: var(--dsw-alias-brand-primary, #4b70e2);
+  color: #ffffff;
+  border-color: var(--dsw-alias-brand-primary, #4b70e2);
+}
+.dsh-files-flat-list {
+  padding: 4px 0;
+}
+.dsh-files-flat-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 12px;
+  cursor: pointer;
+  user-select: none;
+  position: relative;
+  transition: background 0.12s ease;
+  min-height: 32px;
+}
+.dsh-files-flat-row:hover {
+  background: var(--dsw-alias-interactive-bg-hover, rgba(100,120,150,.08));
+}
+.dsh-files-flat-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+.dsh-files-flat-info {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+.dsh-files-flat-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+}
+.dsh-files-flat-name {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--dsw-alias-label-primary, inherit);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.dsh-files-flat-parent {
+  font-size: 10.5px;
+  color: var(--dsw-alias-label-tertiary, #8c9ba5);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  opacity: 0.8;
 }
 .dsh-files-action-btn {
   display: inline-flex;

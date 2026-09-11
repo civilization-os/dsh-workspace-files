@@ -142,3 +142,20 @@ export function FileGlyphIcon({ filename, size = 14 }: { filename: string; size?
     </span>
   )
 }
+
+export function IconList({ size = 13 }: { size?: number }): JSX.Element {
+  return (
+    <svg width={size} height={size} viewBox="0 0 16 16" fill="currentColor">
+      <path fillRule="evenodd" d="M2.5 12a.5.5 0 01.5-.5h10a.5.5 0 010 1H3a.5.5 0 01-.5-.5zm0-4a.5.5 0 01.5-.5h10a.5.5 0 010 1H3a.5.5 0 01-.5-.5zm0-4a.5.5 0 01.5-.5h10a.5.5 0 010 1H3a.5.5 0 01-.5-.5z" />
+    </svg>
+  )
+}
+
+export function IconTree({ size = 13 }: { size?: number }): JSX.Element {
+  return (
+    <svg width={size} height={size} viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M2 3h4v4H2zM10 9h4v4h-4zM4 7v6h6" />
+    </svg>
+  )
+}
+
