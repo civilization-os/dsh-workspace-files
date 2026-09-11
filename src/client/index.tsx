@@ -197,10 +197,12 @@ function WorkspaceFilesView({
     })
   }
 
-  // 一键 @ 引用到当前对话框输入框（完美支持 DSH Lexical contenteditable 与 textarea）
-  const handleMention = (e: React.MouseEvent, path: string) => {
+  // 一键 @ 引用到当前对话框输入框（严格遵循官方规范并智能处理已有的 @）
+  const handleMention = (e: React.MouseEvent, itemOrPath: string | FileItem) => {
     e.stopPropagation()
-    const mentionText = `@${path} `
+    const path = typeof itemOrPath === 'string' ? itemOrPath : itemOrPath.path
+    const isDir = typeof itemOrPath === 'object' ? Boolean(itemOrPath.isDirectory) : false
+    const mentionText = formatMentionText(path, isDir)
 
     let inserted = false
     try {
@@ -209,12 +211,12 @@ function WorkspaceFilesView({
       console.warn('[dsh-workspace-files] 插入输入框异常:', err)
     }
 
-    // 无论是否成功插入输入框，均写入剪贴板作为双重保障
+    // 写入剪贴板作为保障
     void navigator.clipboard.writeText(mentionText.trim()).then(() => {
       if (inserted) {
-        showToastMsg(`已引用至输入框: @${path}`)
+        showToastMsg(`已引用至输入框: ${mentionText.trim()}`)
       } else {
-        showToastMsg(`已复制引用: @${path}`)
+        showToastMsg(`已复制引用: ${mentionText.trim()}`)
       }
     })
   }
@@ -398,7 +400,7 @@ function FileTreeNode(props: {
   expandedPaths: Set<string>
   onToggleExpand: (path: string) => void
   onOpenFile: (path: string) => void
-  onMention: (e: React.MouseEvent, path: string) => void
+  onMention: (e: React.MouseEvent, item: FileItem) => void
   onCopyPath: (e: React.MouseEvent, path: string) => void
 }): JSX.Element {
   const { item, depth, query, isSearchMode, expandedPaths, onToggleExpand, onOpenFile, onMention, onCopyPath } = props
@@ -421,21 +423,44 @@ function FileTreeNode(props: {
             <HighlightText text={item.name} query={query} />
           </span>
           <span className="dsh-files-count-badge">{childCount}</span>
+
+          <div className="dsh-files-row-actions">
+            <button
+              type="button"
+              className="dsh-files-action-btn dsh-files-action-at"
+              onClick={e => onMention(e, item)}
+              title="一键 @ 引用此目录"
+            >
+              <IconAt size={13} />
+            </button>
+            <button
+              type="button"
+              className="dsh-files-action-btn"
+              onClick={e => onCopyPath(e, item.path)}
+              title="复制目录路径"
+            >
+              <IconCopy size={12} />
+            </button>
+          </div>
         </div>
-        {isExpanded && item.children?.map(child => (
-          <FileTreeNode
-            key={child.path}
-            item={child}
-            depth={depth + 1}
-            query={query}
-            isSearchMode={isSearchMode}
-            expandedPaths={expandedPaths}
-            onToggleExpand={onToggleExpand}
-            onOpenFile={onOpenFile}
-            onMention={onMention}
-            onCopyPath={onCopyPath}
-          />
-        ))}
+        {isExpanded && item.children && (
+          <div className="dsh-files-children">
+            {item.children.map(child => (
+              <FileTreeNode
+                key={child.path}
+                item={child}
+                depth={depth + 1}
+                query={query}
+                isSearchMode={isSearchMode}
+                expandedPaths={expandedPaths}
+                onToggleExpand={onToggleExpand}
+                onOpenFile={onOpenFile}
+                onMention={onMention}
+                onCopyPath={onCopyPath}
+              />
+            ))}
+          </div>
+        )}
       </div>
     )
   }
@@ -464,7 +489,7 @@ function FileTreeNode(props: {
         <button
           type="button"
           className="dsh-files-action-btn dsh-files-action-at"
-          onClick={e => onMention(e, item.path)}
+          onClick={e => onMention(e, item)}
           title="一键 @ 引用此文件到当前会话"
         >
           <IconAt size={13} />
@@ -512,9 +537,24 @@ function formatFileSize(bytes: number): string {
 }
 
 /**
+ * 按照 DSH 官方规范格式化引用路径：
+ * - 纯路径无空格：@path
+ * - 路径含空格：@"path"
+ * - 目录末尾保留斜杠：@folder/ 或 @"folder/"
+ */
+function formatMentionText(path: string, isDirectory = false): string {
+  const cleanPath = path.replace(/\\/g, '/').replace(/^\.?\//, '')
+  const finalPath = isDirectory ? (cleanPath.endsWith('/') ? cleanPath : `${cleanPath}/`) : cleanPath
+  if (/\s/u.test(finalPath)) {
+    return `@"${finalPath}" `
+  }
+  return `@${finalPath} `
+}
+
+/**
  * 将引用文本注入到 DSH 当前会话的主输入框。
  * 兼容 DSH 官方基于 Lexical 的 ComposerContentEditable (div[data-composer-input])
- * 以及传统的 textarea / input。
+ * 以及传统的 textarea / input，并自动消除用户手动输入的冗余 '@'。
  */
 function insertMentionToComposer(mentionText: string): boolean {
   if (typeof document === 'undefined') return false
@@ -550,6 +590,18 @@ function insertMentionToComposer(mentionText: string): boolean {
         range.collapse(false) // 光标定位到文本最末尾
         sel.removeAllRanges()
         sel.addRange(range)
+      } else {
+        // 智能消除：若光标前一个字符是已键入的 '@'，将其纳入选区进行覆盖替换，避免出现 '@@file'
+        const range = sel.getRangeAt(0)
+        if (range.collapsed && range.startContainer.nodeType === Node.TEXT_NODE) {
+          const nodeText = range.startContainer.textContent || ''
+          const offset = range.startOffset
+          if (offset > 0 && nodeText[offset - 1] === '@') {
+            range.setStart(range.startContainer, offset - 1)
+            sel.removeAllRanges()
+            sel.addRange(range)
+          }
+        }
       }
     }
 
@@ -577,17 +629,24 @@ function insertMentionToComposer(mentionText: string): boolean {
 
   // 策略 B: 普通 textarea / input
   if (target instanceof HTMLTextAreaElement || target instanceof HTMLInputElement) {
+    let start = target.selectionStart ?? target.value.length
+    const end = target.selectionEnd ?? target.value.length
+    const prev = target.value
+
+    // 智能消除：若前面紧随 '@'，覆盖它
+    if (start > 0 && prev[start - 1] === '@') {
+      start = start - 1
+    }
+
     let success = false
     try {
+      target.selectionStart = start
+      target.selectionEnd = end
       success = document.execCommand('insertText', false, mentionText)
     } catch {}
 
     if (!success) {
-      const start = target.selectionStart ?? target.value.length
-      const end = target.selectionEnd ?? target.value.length
-      const prev = target.value
       const next = prev.slice(0, start) + mentionText + prev.slice(end)
-
       const proto = target instanceof HTMLTextAreaElement ? window.HTMLTextAreaElement.prototype : window.HTMLInputElement.prototype
       const setter = Object.getOwnPropertyDescriptor(proto, 'value')?.set
       if (setter) {
