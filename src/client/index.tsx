@@ -51,7 +51,7 @@ function FolderGuideGlyph({ size = 20, className }: { size?: number; className?:
 
 function WorkspaceFilesTabTitle({ useTabInfo }: any): JSX.Element {
   const info = useTabInfo ? useTabInfo() : null
-  const title = info?.tab?.title || '工作区文件'
+  const title = info?.tab?.title || '文件'
   return (
     <>
       <IconFolder size={15} />
@@ -92,11 +92,11 @@ export function apply(ctx: Context): void {
       id: OFFICIAL_FILES_TAB_ID,
       kind: 'files',
       priority: 'extension',
-      title: () => '工作区文件',
+      title: () => '文件',
       guide: [{
         order: 10,
-        title: () => '工作区文件',
-        description: () => '浏览、搜索与一键引用工作区文件',
+        title: () => '文件',
+        description: () => '浏览、搜索与一键引用项目文件',
         icon: FolderGuideGlyph,
       }],
     }), 'dsh-workspace-files: override official files tab')
@@ -155,7 +155,7 @@ function WorkspaceFilesView({
         return new Set<string>()
       })
     } catch (err: any) {
-      setError(err?.message || '无法加载工作区文件')
+      setError(err?.message || '无法加载文件列表')
     } finally {
       if (!quiet) setLoading(false)
     }
@@ -356,7 +356,7 @@ function WorkspaceFilesView({
       <header className="dsh-files-header">
         <div className="dsh-files-header-info">
           <div className="dsh-files-title-row">
-            <span className="dsh-files-title">工作区文件</span>
+            <span className="dsh-files-title">文件</span>
             {data && (
               <span className="dsh-files-stats-badge">
                 {data.totalFiles} 文件 · {data.totalDirs} 目录
@@ -376,7 +376,7 @@ function WorkspaceFilesView({
           <input
             type="text"
             className="dsh-files-search-input"
-            placeholder="搜索工作区文件 (支持路径筛选)..."
+            placeholder="搜索文件 (支持路径筛选)..."
             value={query}
             onChange={e => setQuery(e.target.value)}
             onKeyDown={e => {
@@ -461,7 +461,7 @@ function WorkspaceFilesView({
         {loading && !data ? (
           <div className="dsh-files-centered">
             <div className="dsh-files-spinner" />
-            <span>加载工作区文件…</span>
+            <span>加载文件…</span>
           </div>
         ) : isSearchActive && flatSearchResults.length === 0 ? (
           <div className="dsh-files-empty">
@@ -1043,7 +1043,7 @@ async function call<T = any>(method: string, payload: Record<string, unknown> = 
   }
 
   if (!response) {
-    throw new Error('网络请求失败：无法连接到工作区文件服务')
+    throw new Error('网络请求失败：无法连接到文件服务')
   }
 
   const envelope = (await response.json().catch(() => null)) as {

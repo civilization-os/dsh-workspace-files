@@ -1,8 +1,8 @@
 # dsh-workspace-files
 
-DeepSeek Harness (DSH) 原生增强型工作区文件浏览器插件。
+DeepSeek Harness (DSH) 原生增强型文件浏览器插件。
 
-通过 DSH 0.1.5+ 官方右侧栏系统的优先级机制（`kind: "files"`, `priority: "extension"`），**100% 原生平滑接管官方自带的“工作区文件”**，彻底避免重复卡片，并补全官方缺失的文件搜索与一键 `@` 引用核心能力。
+通过 DSH 0.1.5+ 官方右侧栏系统的优先级机制（`kind: "files"`, `priority: "extension"`），**100% 原生平滑接管官方右侧栏，统一呈现为简洁的「文件」面板**，彻底避免重复卡片，并补全官方缺失的文件搜索与一键 `@` 引用核心能力。
 
 ---
 
