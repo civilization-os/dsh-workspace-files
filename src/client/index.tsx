@@ -17,7 +17,7 @@ import {
   IconSearch,
 } from './icons.js'
 
-export const inject = ['slots', 'sidebarRightTabs', 'conversation?']
+export const inject = ['slots', 'sidebarRightTabs']
 
 let globalCtx: Context | null = null
 
