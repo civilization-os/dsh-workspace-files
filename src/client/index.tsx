@@ -230,9 +230,10 @@ function WorkspaceFilesView({
     }
 
     // 写入剪贴板作为双重保障
+    const displayName = itemObj.isDirectory ? `${itemObj.name}/` : itemObj.name
     void navigator.clipboard.writeText(mentionText.trim()).then(() => {
       if (inserted) {
-        showToastMsg(`已引用至输入框: ${itemObj.name}`)
+        showToastMsg(`已引用${itemObj.isDirectory ? '目录' : '文件'}: ${displayName}`)
       } else {
         showToastMsg(`已复制引用: ${mentionText.trim()}`)
       }
@@ -447,9 +448,10 @@ function FileTreeNode(props: {
               type="button"
               className="dsh-files-action-btn dsh-files-action-at"
               onClick={e => onMention(e, item)}
-              title="一键 @ 引用此目录"
+              title="一键 @ 引用此目录到当前会话"
             >
               <IconAt size={13} />
+              <span className="dsh-files-action-at-text">@引用</span>
             </button>
             <button
               type="button"
