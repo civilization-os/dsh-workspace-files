@@ -5,17 +5,55 @@ export const name = '@civilization/dsh-workspace-files'
 export const inject = ['webServer']
 
 async function readJsonBody(req: any): Promise<Record<string, any>> {
+  if (req.body && typeof req.body === 'object') {
+    return req.body
+  }
+  if (typeof req.body === 'string' && req.body.trim()) {
+    try {
+      return JSON.parse(req.body)
+    } catch {}
+  }
+  if (req.readableEnded || req.complete) {
+    return {}
+  }
+
   return new Promise((resolve, reject) => {
     let raw = ''
-    req.on('data', (chunk: Buffer) => { raw += chunk.toString('utf8') })
-    req.on('end', () => {
+    let timer: any = null
+
+    const cleanup = () => {
+      if (timer) clearTimeout(timer)
+      req.off?.('data', onData)
+      req.off?.('end', onEnd)
+      req.off?.('error', onError)
+    }
+
+    const onData = (chunk: Buffer) => { raw += chunk.toString('utf8') }
+    const onEnd = () => {
+      cleanup()
       try {
         resolve(raw ? JSON.parse(raw) : {})
       } catch (err) {
         reject(err)
       }
-    })
-    req.on('error', reject)
+    }
+    const onError = (err: any) => {
+      cleanup()
+      reject(err)
+    }
+
+    req.on('data', onData)
+    req.on('end', onEnd)
+    req.on('error', onError)
+
+    timer = setTimeout(() => {
+      cleanup()
+      try {
+        resolve(raw ? JSON.parse(raw) : {})
+      } catch {
+        resolve({})
+      }
+    }, 1500)
   })
 }
 

@@ -197,30 +197,25 @@ function WorkspaceFilesView({
     })
   }
 
-  // 一键 @ 引用到当前对话框输入框
+  // 一键 @ 引用到当前对话框输入框（完美支持 DSH Lexical contenteditable 与 textarea）
   const handleMention = (e: React.MouseEvent, path: string) => {
     e.stopPropagation()
     const mentionText = `@${path} `
 
-    // 1. 尝试探测并注入到当前激活会话的主输入框 (Textarea)
+    let inserted = false
     try {
-      const input = document.querySelector('textarea') as HTMLTextAreaElement | null
-      if (input) {
-        const start = input.selectionStart ?? input.value.length
-        const end = input.selectionEnd ?? input.value.length
-        const prev = input.value
-        input.value = prev.slice(0, start) + mentionText + prev.slice(end)
-        input.selectionStart = input.selectionEnd = start + mentionText.length
+      inserted = insertMentionToComposer(mentionText)
+    } catch (err) {
+      console.warn('[dsh-workspace-files] 插入输入框异常:', err)
+    }
 
-        // 分发 input 事件通知 React 状态同步
-        input.dispatchEvent(new Event('input', { bubbles: true }))
-        input.focus()
-      }
-    } catch {}
-
-    // 2. 写入剪贴板作为兜底
+    // 无论是否成功插入输入框，均写入剪贴板作为双重保障
     void navigator.clipboard.writeText(mentionText.trim()).then(() => {
-      showToastMsg(`已插入并复制引用: @${path}`)
+      if (inserted) {
+        showToastMsg(`已引用至输入框: @${path}`)
+      } else {
+        showToastMsg(`已复制引用: @${path}`)
+      }
     })
   }
 
@@ -514,6 +509,102 @@ function formatFileSize(bytes: number): string {
   if (kb < 1024) return `${kb.toFixed(1)} KB`
   const mb = kb / 1024
   return `${mb.toFixed(1)} MB`
+}
+
+/**
+ * 将引用文本注入到 DSH 当前会话的主输入框。
+ * 兼容 DSH 官方基于 Lexical 的 ComposerContentEditable (div[data-composer-input])
+ * 以及传统的 textarea / input。
+ */
+function insertMentionToComposer(mentionText: string): boolean {
+  if (typeof document === 'undefined') return false
+
+  // 1. 查找 DSH 官方输入框（Lexical contenteditable 容器优先）
+  const candidates = [
+    document.querySelector<HTMLElement>('[data-composer-input="true"]'),
+    document.querySelector<HTMLElement>('[data-composer-input]'),
+    document.querySelector<HTMLElement>('[data-composer-card] [contenteditable="true"]'),
+    document.querySelector<HTMLElement>('[contenteditable="true"][role="textbox"]'),
+    document.querySelector<HTMLTextAreaElement>('textarea:not([readonly]):not(.dsh-files-search-input)'),
+  ].filter(Boolean) as HTMLElement[]
+
+  const target = candidates[0]
+  if (!target) return false
+
+  target.focus()
+
+  // 策略 A: contenteditable (DSH 官方 Lexical 编辑器)
+  if (target.getAttribute('contenteditable') === 'true' || target.isContentEditable) {
+    const sel = window.getSelection()
+    if (sel) {
+      let isInTarget = false
+      if (sel.rangeCount > 0) {
+        const anchor = sel.anchorNode
+        if (anchor && (anchor === target || target.contains(anchor))) {
+          isInTarget = true
+        }
+      }
+      if (!isInTarget) {
+        const range = document.createRange()
+        range.selectNodeContents(target)
+        range.collapse(false) // 光标定位到文本最末尾
+        sel.removeAllRanges()
+        sel.addRange(range)
+      }
+    }
+
+    // 原生 execCommand('insertText') 会直接触发 Lexical 的 input/beforeinput 事件流并更新 React 状态
+    let success = false
+    try {
+      success = document.execCommand('insertText', false, mentionText)
+    } catch {}
+
+    if (!success) {
+      try {
+        const evt = new InputEvent('beforeinput', {
+          bubbles: true,
+          cancelable: true,
+          inputType: 'insertText',
+          data: mentionText,
+        })
+        target.dispatchEvent(evt)
+        success = true
+      } catch {}
+    }
+
+    return success
+  }
+
+  // 策略 B: 普通 textarea / input
+  if (target instanceof HTMLTextAreaElement || target instanceof HTMLInputElement) {
+    let success = false
+    try {
+      success = document.execCommand('insertText', false, mentionText)
+    } catch {}
+
+    if (!success) {
+      const start = target.selectionStart ?? target.value.length
+      const end = target.selectionEnd ?? target.value.length
+      const prev = target.value
+      const next = prev.slice(0, start) + mentionText + prev.slice(end)
+
+      const proto = target instanceof HTMLTextAreaElement ? window.HTMLTextAreaElement.prototype : window.HTMLInputElement.prototype
+      const setter = Object.getOwnPropertyDescriptor(proto, 'value')?.set
+      if (setter) {
+        setter.call(target, next)
+      } else {
+        target.value = next
+      }
+
+      target.selectionStart = target.selectionEnd = start + mentionText.length
+      target.dispatchEvent(new InputEvent('input', { bubbles: true, inputType: 'insertText', data: mentionText }))
+      target.dispatchEvent(new Event('change', { bubbles: true }))
+      success = true
+    }
+    return success
+  }
+
+  return false
 }
 
 async function call<T = any>(method: string, payload: Record<string, unknown> = {}): Promise<T> {
