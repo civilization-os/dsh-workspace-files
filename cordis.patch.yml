@@ -1,0 +1,4 @@
+# dsh-workspace-files bundle patch
+- insert:
+    - id: dsh-workspace-files
+      name: "@civilization/dsh-workspace-files"
