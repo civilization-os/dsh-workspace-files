@@ -197,6 +197,41 @@ function WorkspaceFilesView({
     saveStoredExpandedPaths(data?.root || cwd, empty)
   }
 
+  // 搜索时点击文件夹：跳回树形视图并展开该目录及全部祖先路径，自动平滑定位
+  const handleJumpToFolderInTree = (dirPath: string) => {
+    const parts = dirPath.split('/')
+    const toExpand: string[] = []
+    let acc = ''
+    for (const p of parts) {
+      if (!p) continue
+      acc = acc ? `${acc}/${p}` : p
+      toExpand.push(acc)
+    }
+
+    setExpandedPaths(prev => {
+      const next = new Set(prev)
+      for (const p of toExpand) {
+        next.add(p)
+      }
+      saveStoredExpandedPaths(data?.root || cwd, next)
+      return next
+    })
+
+    // 退出搜索状态回到树形视图
+    setQuery('')
+    showToastMsg(`已定位并展开目录: ${dirPath}/`)
+
+    // 平滑滚动定位到该目录节点
+    setTimeout(() => {
+      try {
+        const el = document.querySelector(`[data-tree-path="${dirPath}"]`)
+        if (el) {
+          el.scrollIntoView({ block: 'center', behavior: 'smooth' })
+        }
+      } catch {}
+    }, 60)
+  }
+
   // 复制相对路径
   const handleCopyPath = (e: React.MouseEvent, path: string) => {
     e.stopPropagation()
@@ -459,9 +494,15 @@ function WorkspaceFilesView({
               {flatSearchResults.map(({ item, parentDir }) => (
                 <div
                   key={item.path}
-                  className="dsh-files-flat-row"
-                  onClick={() => !item.isDirectory && onOpenFile(item.path)}
-                  title={`点击打开: ${item.path}`}
+                  className={`dsh-files-flat-row ${item.isDirectory ? 'is-directory' : ''}`}
+                  onClick={() => {
+                    if (item.isDirectory) {
+                      handleJumpToFolderInTree(item.path)
+                    } else {
+                      onOpenFile(item.path)
+                    }
+                  }}
+                  title={item.isDirectory ? `点击退出搜索并定位展开目录: ${item.path}/` : `点击预览打开文件: ${item.path}`}
                 >
                   <span className="dsh-files-flat-icon">
                     {item.isDirectory ? <IconFolder size={14} /> : <FileGlyphIcon filename={item.name} size={14} />}
@@ -474,6 +515,9 @@ function WorkspaceFilesView({
                       </span>
                       {item.size !== undefined && (
                         <span className="dsh-files-size">{formatFileSize(item.size)}</span>
+                      )}
+                      {item.isDirectory && (
+                        <span className="dsh-files-jump-hint">跳回展开 ›</span>
                       )}
                     </div>
                     {parentDir && (
@@ -583,6 +627,7 @@ function FileTreeNode(props: {
       <div className="dsh-files-dir-block">
         <div
           className="dsh-files-dir-row"
+          data-tree-path={item.path}
           style={{ paddingLeft: `${depth * 14 + 10}px` }}
           onClick={() => onToggleExpand(item.path)}
         >
@@ -641,6 +686,7 @@ function FileTreeNode(props: {
   return (
     <div
       className="dsh-files-row"
+      data-tree-path={item.path}
       style={{ paddingLeft: `${depth * 14 + 10}px` }}
       onClick={() => onOpenFile(item.path)}
       title={`点击打开: ${item.path}`}
@@ -1352,6 +1398,21 @@ function GlobalFilesStyle(): JSX.Element {
   text-overflow: ellipsis;
   white-space: nowrap;
   opacity: 0.8;
+}
+.dsh-files-jump-hint {
+  font-size: 10px;
+  color: var(--dsw-alias-brand-primary, #4b70e2);
+  opacity: 0;
+  transition: opacity 0.12s ease;
+  margin-right: 6px;
+  font-weight: 500;
+  white-space: nowrap;
+}
+.dsh-files-flat-row:hover .dsh-files-jump-hint {
+  opacity: 0.85;
+}
+.dsh-files-flat-row.is-directory:hover {
+  background: color-mix(in srgb, var(--dsw-alias-brand-primary, #4b70e2) 6%, transparent);
 }
 .dsh-files-action-btn {
   display: inline-flex;
