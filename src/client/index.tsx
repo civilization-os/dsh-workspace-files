@@ -17,7 +17,9 @@ import {
   IconSearch,
 } from './icons.js'
 
-export const inject = ['slots', 'sidebarRightTabs']
+export const inject = ['slots', 'sidebarRightTabs', 'conversation?']
+
+let globalCtx: Context | null = null
 
 const OFFICIAL_FILES_TAB_ID = '@civilization/dsh-workspace-files'
 
@@ -78,6 +80,7 @@ function WorkspaceFilesTabBody(props: any): JSX.Element {
 }
 
 export function apply(ctx: Context): void {
+  globalCtx = ctx
   const sidebarRightTabs = (ctx as any).sidebarRightTabs
   const slots = (ctx as any).slots
 
@@ -141,14 +144,13 @@ function WorkspaceFilesView({
       const res = await call<WorkspaceFilesResult>('files.tree', { sessionId, cwd, showHidden })
       setData(res)
 
-      // 默认展开首层目录
+      // 默认折叠，并从 localStorage 恢复已记录的展开状态
       setExpandedPaths(prev => {
         if (prev.size > 0) return prev
-        const initial = new Set<string>()
-        for (const item of res.items) {
-          if (item.isDirectory) initial.add(item.path)
-        }
-        return initial
+        const stored = loadStoredExpandedPaths(res.root || cwd)
+        if (stored !== null) return stored
+        // 默认全部关闭，不展开任何目录
+        return new Set<string>()
       })
     } catch (err: any) {
       setError(err?.message || '无法加载工作区文件')
@@ -166,6 +168,7 @@ function WorkspaceFilesView({
       const next = new Set(prev)
       if (next.has(path)) next.delete(path)
       else next.add(path)
+      saveStoredExpandedPaths(data?.root || cwd, next)
       return next
     })
   }
@@ -183,10 +186,13 @@ function WorkspaceFilesView({
     }
     collect(data.items)
     setExpandedPaths(all)
+    saveStoredExpandedPaths(data.root || cwd, all)
   }
 
   const handleCollapseAll = () => {
-    setExpandedPaths(new Set())
+    const empty = new Set<string>()
+    setExpandedPaths(empty)
+    saveStoredExpandedPaths(data?.root || cwd, empty)
   }
 
   // 复制相对路径
@@ -197,24 +203,36 @@ function WorkspaceFilesView({
     })
   }
 
-  // 一键 @ 引用到当前对话框输入框（严格遵循官方规范并智能处理已有的 @）
+  // 一键 @ 引用到当前对话框输入框（优先插入官方原生交互式 Chip 胶囊）
   const handleMention = (e: React.MouseEvent, itemOrPath: string | FileItem) => {
     e.stopPropagation()
-    const path = typeof itemOrPath === 'string' ? itemOrPath : itemOrPath.path
-    const isDir = typeof itemOrPath === 'object' ? Boolean(itemOrPath.isDirectory) : false
-    const mentionText = formatMentionText(path, isDir)
+    const itemObj: FileItem = typeof itemOrPath === 'string'
+      ? { name: itemOrPath.split('/').pop() || itemOrPath, path: itemOrPath, isDirectory: false }
+      : itemOrPath
 
+    const mentionText = formatMentionText(itemObj.path, itemObj.isDirectory)
+
+    // 1. 优先尝试向会话输入框插入官方原生 ReferenceChipNode 胶囊卡片
     let inserted = false
     try {
-      inserted = insertMentionToComposer(mentionText)
+      inserted = tryInsertNativeReferenceChip(globalCtx, sessionId, itemObj)
     } catch (err) {
-      console.warn('[dsh-workspace-files] 插入输入框异常:', err)
+      console.warn('[dsh-workspace-files] 原生 Chip 插入失败:', err)
     }
 
-    // 写入剪贴板作为保障
+    // 2. 若原生 Chip 插入未成功，无缝降级为规范纯文本插入
+    if (!inserted) {
+      try {
+        inserted = insertMentionToComposer(mentionText)
+      } catch (err) {
+        console.warn('[dsh-workspace-files] 降级纯文本插入失败:', err)
+      }
+    }
+
+    // 写入剪贴板作为双重保障
     void navigator.clipboard.writeText(mentionText.trim()).then(() => {
       if (inserted) {
-        showToastMsg(`已引用至输入框: ${mentionText.trim()}`)
+        showToastMsg(`已引用至输入框: ${itemObj.name}`)
       } else {
         showToastMsg(`已复制引用: ${mentionText.trim()}`)
       }
@@ -549,6 +567,92 @@ function formatMentionText(path: string, isDirectory = false): string {
     return `@"${finalPath}" `
   }
   return `@${finalPath} `
+}
+
+function getStorageKey(workspaceRoot?: string): string {
+  const safe = (workspaceRoot || 'default').replace(/[^a-zA-Z0-9_-]/g, '_')
+  return `dsh_files_expanded_${safe}`
+}
+
+function loadStoredExpandedPaths(workspaceRoot?: string): Set<string> | null {
+  if (typeof window === 'undefined' || !window.localStorage) return null
+  try {
+    const raw = window.localStorage.getItem(getStorageKey(workspaceRoot))
+    if (!raw) return null
+    const list = JSON.parse(raw)
+    if (Array.isArray(list)) return new Set<string>(list)
+  } catch {}
+  return null
+}
+
+function saveStoredExpandedPaths(workspaceRoot: string | undefined, paths: Set<string>): void {
+  if (typeof window === 'undefined' || !window.localStorage) return
+  try {
+    window.localStorage.setItem(getStorageKey(workspaceRoot), JSON.stringify(Array.from(paths)))
+  } catch {}
+}
+
+/**
+ * 尝试通过 DSH 官方 conversation.input 服务直接向会话输入框插入原生的 ReferenceChipNode（官方胶囊卡片）
+ */
+function tryInsertNativeReferenceChip(ctx: Context | null, sessionId: string | undefined, item: FileItem): boolean {
+  if (!ctx || !sessionId) return false
+  try {
+    const conversation = (ctx as any).conversation || (ctx as any).get?.('conversation')
+    const inputService = conversation?.input || (ctx as any)['conversation.input'] || (ctx as any).get?.('conversation.input')
+    if (!inputService) return false
+
+    // 获取当前会话的 SessionInputShell
+    const shell = inputService.shell?.(sessionId) || inputService.shells?.get?.(sessionId)
+    if (!shell) return false
+
+    // 聚焦输入框
+    const composerDom = document.querySelector<HTMLElement>('[data-composer-input="true"], [data-composer-input]')
+    if (composerDom) composerDom.focus()
+
+    const cleanPath = item.path.replace(/\\/g, '/').replace(/^\.?\//, '')
+    const mention = item.isDirectory ? (cleanPath.endsWith('/') ? `@${cleanPath}` : `@${cleanPath}/`) : `@${cleanPath}`
+    const label = item.isDirectory ? (item.name.endsWith('/') ? item.name : `${item.name}/`) : item.name
+
+    const reference = {
+      source: 'reference',
+      ref: mention,
+      label,
+      appearance: item.isDirectory ? 'folder' : 'file',
+      clipboardText: mention,
+    }
+
+    const text = shell.projection?.detectText || ''
+    let caret = shell.projection?.caret ?? text.length
+    let start = caret
+    const end = caret
+
+    // 智能消除：若当前光标前是 '@'，回退一个字符将其替换
+    if (start > 0 && text[start - 1] === '@') {
+      start = start - 1
+    }
+
+    const span = {
+      draftRev: shell.rev,
+      start,
+      end,
+    }
+
+    if (typeof shell.insertReference === 'function') {
+      const ok = shell.insertReference(reference, span)
+      if (ok) return true
+    }
+
+    // 备用：尝试通过 session actx 派发事件
+    const actx = shell.deps?.actx
+    if (actx && typeof actx.bail === 'function') {
+      const ok = actx.bail(actx, 'slash/input-insert-reference', { reference, span })
+      if (ok === true) return true
+    }
+  } catch (err) {
+    console.debug('[dsh-workspace-files] 插入原生 Chip 异常，降级纯文本:', err)
+  }
+  return false
 }
 
 /**
