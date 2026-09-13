@@ -90,12 +90,36 @@ function resolveCwd(ctx: Context, body: Record<string, any>): string {
   return process.cwd()
 }
 
+export const SETTINGS_NS = 'workspace-files'
+
 export function apply(ctx: Context, config: Config = {}): void {
+  const liveConfig = {
+    maxDepth: typeof config?.maxDepth === 'number' && config.maxDepth > 0 ? config.maxDepth : 16,
+    showHidden: Boolean(config?.showHidden),
+  }
+
+  // 关键：向 Host 的 settings 服务注册 settings namespace，使设置面板的前端控制器能够枚举到此插件卡片
+  if ((ctx as any).inject) {
+    (ctx as any).inject(['settings'], (scopedCtx: any) => {
+      try {
+        const scope = scopedCtx.settings?.register(SETTINGS_NS, Config, {
+          base: liveConfig,
+        })
+        const applyChange = () => {
+          const current = scope?.get?.()
+          if (typeof current?.maxDepth === 'number') liveConfig.maxDepth = current.maxDepth
+          if (typeof current?.showHidden === 'boolean') liveConfig.showHidden = current.showHidden
+        }
+        applyChange()
+        scope?.watch?.(applyChange)
+      } catch (err) {
+        console.warn('[dsh-workspace-files] failed to register settings scope:', err)
+      }
+    })
+  }
+
   const webServer = (ctx as any).webServer
   if (!webServer) return
-
-  const fallbackDepth = typeof config?.maxDepth === 'number' && config.maxDepth > 0 ? config.maxDepth : 16
-  const fallbackShowHidden = Boolean(config?.showHidden)
 
   const handleRpc = async (req: any, res: any, prefix: string) => {
     if (req.method !== 'POST') {
@@ -106,6 +130,23 @@ export function apply(ctx: Context, config: Config = {}): void {
     const pathname = new URL(req.url ?? '/', 'http://dsh.internal').pathname
     const method = pathname.startsWith(prefix) ? pathname.slice(prefix.length) : undefined
 
+    if (method === 'config.get') {
+      writeJson(res, 200, { ok: true, value: liveConfig })
+      return
+    }
+
+    if (method === 'config.set') {
+      try {
+        const body = await readJsonBody(req)
+        if (typeof body.maxDepth === 'number' && body.maxDepth > 0) liveConfig.maxDepth = body.maxDepth
+        if (typeof body.showHidden === 'boolean') liveConfig.showHidden = body.showHidden
+        writeJson(res, 200, { ok: true, value: liveConfig })
+      } catch (err: any) {
+        writeJson(res, 500, { ok: false, error: { message: err?.message || String(err) } })
+      }
+      return
+    }
+
     if (method !== 'files.tree') {
       writeJson(res, 404, { ok: false, error: { message: `Unknown method: ${method}` } })
       return
@@ -115,9 +156,9 @@ export function apply(ctx: Context, config: Config = {}): void {
       const body = await readJsonBody(req)
       const cwd = resolveCwd(ctx, body)
       const result = await scanWorkspaceTree(cwd, {
-        showHidden: typeof body.showHidden === 'boolean' ? body.showHidden : fallbackShowHidden,
+        showHidden: typeof body.showHidden === 'boolean' ? body.showHidden : liveConfig.showHidden,
         showIgnored: Boolean(body.showIgnored),
-        maxDepth: typeof body.maxDepth === 'number' && body.maxDepth > 0 ? body.maxDepth : fallbackDepth,
+        maxDepth: typeof body.maxDepth === 'number' && body.maxDepth > 0 ? body.maxDepth : liveConfig.maxDepth,
       })
       writeJson(res, 200, { ok: true, value: result })
     } catch (err: any) {

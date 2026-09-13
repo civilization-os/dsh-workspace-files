@@ -113,13 +113,19 @@ export function apply(ctx: Context): void {
     }, WorkspaceFilesTabTitle)), 'dsh-workspace-files: official tab title')
   }
 
-  // 注入设置中心“插件配置”卡片
+  // 注入设置中心“插件配置”卡片（命名空间必须为 workspace-files，与 Host settings 服务注册一致）
   const registerSettingsCard = (targetCtx: any) => {
     if (!targetCtx?.slots) return
-    targetCtx.effect?.(() => targetCtx.slots.inject('settings.plugin.item', () => targetCtx.slots.register({
-      name: 'settings.plugin.item',
-      key: '@civilization/dsh-workspace-files',
-    }, WorkspaceFilesSettingsCard)), 'dsh-workspace-files: settings card')
+    targetCtx.effect?.(() => targetCtx.slots.inject('settings.plugin.item', function* () {
+      yield targetCtx.slots.register({
+        name: 'settings.plugin.item',
+        key: 'workspace-files',
+      }, WorkspaceFilesSettingsCard)
+      yield targetCtx.slots.register({
+        name: 'settings.plugin.item',
+        key: '@civilization/dsh-workspace-files',
+      }, WorkspaceFilesSettingsCard)
+    }), 'dsh-workspace-files: settings card')
   }
 
   if (slots) {
@@ -162,6 +168,11 @@ export function saveWorkspaceFilesConfig(cfg: WorkspaceFilesConfig): void {
     if (typeof window !== 'undefined') {
       window.dispatchEvent(new CustomEvent('dsh-workspace-files:config-change', { detail: cfg }))
     }
+    fetch('/dsh-workspace-files/api/config.set', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(cfg),
+    }).catch(() => {})
   } catch {}
 }
 
