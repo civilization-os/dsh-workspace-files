@@ -27,6 +27,22 @@ DeepSeek Harness (DSH) 原生增强型文件浏览器插件。
 
 ---
 
+## 插件配置项 (设置中心 -> 插件 -> 插件配置)
+
+可在 DSH 设置界面的「插件配置」列表展开卡片，或直接在 `cordis.patch.yml` 中自定义配置：
+
+- **`maxDepth`** (number，默认 `16`，范围 1~100)：工作区文件树扫描的最大文件夹深度（层级）。
+- **`showHidden`** (boolean，默认 `false`)：默认是否显示以点开头的隐藏文件。
+
+```yaml
+- id: dsh-workspace-files
+  config:
+    maxDepth: 20
+    showHidden: false
+```
+
+---
+
 ## 安装
 
 ```powershell

@@ -39,7 +39,7 @@ export async function scanWorkspaceTree(
   options: { maxDepth?: number; showHidden?: boolean; showIgnored?: boolean } = {},
 ): Promise<WorkspaceFilesResult> {
   const root = resolve(cwd)
-  const maxDepth = options.maxDepth ?? 8
+  const maxDepth = options.maxDepth ?? 16
   const showHidden = options.showHidden ?? false
   const showIgnored = options.showIgnored ?? false
 

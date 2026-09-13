@@ -1,8 +1,19 @@
 import type { Context } from '@deepseek-ai/cordis'
+import Schema from '@deepseek-ai/schemastery'
 import { scanWorkspaceTree } from './files.js'
 
 export const name = '@civilization/dsh-workspace-files'
 export const inject = ['webServer']
+
+export interface Config {
+  maxDepth?: number
+  showHidden?: boolean
+}
+
+export const Config: Schema<Config> = Schema.object({
+  maxDepth: Schema.natural().min(1).max(100).default(16).description('工作区文件树扫描的最大文件夹深度（层级）'),
+  showHidden: Schema.boolean().default(false).description('默认是否显示以点开头的隐藏文件'),
+}).description('工作区文件：浏览与检索工作区文件树')
 
 async function readJsonBody(req: any): Promise<Record<string, any>> {
   if (req.body && typeof req.body === 'object') {
@@ -79,9 +90,12 @@ function resolveCwd(ctx: Context, body: Record<string, any>): string {
   return process.cwd()
 }
 
-export function apply(ctx: Context): void {
+export function apply(ctx: Context, config: Config = {}): void {
   const webServer = (ctx as any).webServer
   if (!webServer) return
+
+  const fallbackDepth = typeof config?.maxDepth === 'number' && config.maxDepth > 0 ? config.maxDepth : 16
+  const fallbackShowHidden = Boolean(config?.showHidden)
 
   const handleRpc = async (req: any, res: any, prefix: string) => {
     if (req.method !== 'POST') {
@@ -101,9 +115,9 @@ export function apply(ctx: Context): void {
       const body = await readJsonBody(req)
       const cwd = resolveCwd(ctx, body)
       const result = await scanWorkspaceTree(cwd, {
-        showHidden: Boolean(body.showHidden),
+        showHidden: typeof body.showHidden === 'boolean' ? body.showHidden : fallbackShowHidden,
         showIgnored: Boolean(body.showIgnored),
-        maxDepth: typeof body.maxDepth === 'number' ? body.maxDepth : 8,
+        maxDepth: typeof body.maxDepth === 'number' && body.maxDepth > 0 ? body.maxDepth : fallbackDepth,
       })
       writeJson(res, 200, { ok: true, value: result })
     } catch (err: any) {
