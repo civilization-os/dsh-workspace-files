@@ -8,6 +8,7 @@ import {
   FileGlyphIcon,
   IconAt,
   IconCheck,
+  IconChevronDown,
   IconClose,
   IconCollapseAll,
   IconCopy,
@@ -111,6 +112,425 @@ export function apply(ctx: Context): void {
       key: OFFICIAL_FILES_TAB_ID,
     }, WorkspaceFilesTabTitle)), 'dsh-workspace-files: official tab title')
   }
+
+  // 注入设置中心“插件配置”卡片
+  const registerSettingsCard = (targetCtx: any) => {
+    if (!targetCtx?.slots) return
+    targetCtx.effect?.(() => targetCtx.slots.inject('settings.plugin.item', () => targetCtx.slots.register({
+      name: 'settings.plugin.item',
+      key: '@civilization/dsh-workspace-files',
+    }, WorkspaceFilesSettingsCard)), 'dsh-workspace-files: settings card')
+  }
+
+  if (slots) {
+    registerSettingsCard(ctx)
+  }
+  if ((ctx as any).inject) {
+    (ctx as any).inject(['settingsScope'], (scoped: any) => {
+      registerSettingsCard(scoped)
+    })
+  }
+}
+
+/* ── Workspace Files Configuration Store ── */
+export interface WorkspaceFilesConfig {
+  maxDepth: number
+  showHidden: boolean
+}
+
+const CONFIG_STORAGE_KEY = 'dsh_workspace_files_config'
+
+export function loadWorkspaceFilesConfig(): WorkspaceFilesConfig {
+  try {
+    const raw = typeof localStorage !== 'undefined' ? localStorage.getItem(CONFIG_STORAGE_KEY) : null
+    if (raw) {
+      const parsed = JSON.parse(raw)
+      return {
+        maxDepth: typeof parsed.maxDepth === 'number' && parsed.maxDepth > 0 ? parsed.maxDepth : 16,
+        showHidden: Boolean(parsed.showHidden),
+      }
+    }
+  } catch {}
+  return { maxDepth: 16, showHidden: false }
+}
+
+export function saveWorkspaceFilesConfig(cfg: WorkspaceFilesConfig): void {
+  try {
+    if (typeof localStorage !== 'undefined') {
+      localStorage.setItem(CONFIG_STORAGE_KEY, JSON.stringify(cfg))
+    }
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('dsh-workspace-files:config-change', { detail: cfg }))
+    }
+  } catch {}
+}
+
+function ensureSettingsStyle() {
+  if (typeof document === 'undefined') return
+  const id = 'dsh-workspace-files-settings-style'
+  if (document.getElementById(id)) return
+  const style = document.createElement('style')
+  style.id = id
+  style.textContent = `
+.dsh-wf-card {
+  border: 1px solid var(--dsw-alias-border-l2, #e5e7eb);
+  background: var(--dsw-alias-bg-layer-3, #fff);
+  border-radius: 12px;
+  list-style: none;
+  transition: border-color .16s, background .16s;
+  box-sizing: border-box;
+}
+.dsh-wf-card-open {
+  background: var(--dsw-alias-bg-layer-2, #f7f8fa);
+  border-color: var(--dsw-alias-label-dimmed, #c8ccd4);
+}
+.dsh-wf-header {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 100%;
+  font: inherit;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+  background: 0 0;
+  border: 0;
+  border-radius: 12px;
+  align-items: center;
+  gap: 12px;
+  padding: 14px 16px;
+  display: flex;
+}
+.dsh-wf-head-text {
+  flex-direction: column;
+  flex: 1;
+  gap: 4px;
+  min-width: 0;
+  display: flex;
+}
+.dsh-wf-name {
+  color: var(--dsw-alias-label-primary, #1f2328);
+  font-size: 15px;
+  font-weight: 600;
+  line-height: 1.4;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.dsh-wf-version {
+  font-size: 12px;
+  font-weight: 400;
+  color: var(--dsw-alias-label-tertiary, #8b93a1);
+}
+.dsh-wf-desc {
+  color: var(--dsw-alias-label-tertiary, #8b93a1);
+  font-size: 13px;
+  line-height: 1.5;
+}
+.dsh-wf-chevron {
+  color: var(--dsw-alias-label-tertiary, #8b93a1);
+  flex: none;
+  transition: transform .16s ease-in-out;
+  display: inline-flex;
+}
+.dsh-wf-chevron-open {
+  transform: rotate(180deg);
+}
+.dsh-wf-body {
+  border-top: 1px solid var(--dsw-alias-border-l2, #e5e7eb);
+  margin: 0 16px;
+  padding: 8px 0 12px;
+}
+.dsh-wf-row {
+  align-items: center;
+  gap: 16px;
+  padding: 12px 0;
+  display: flex;
+  justify-content: space-between;
+}
+.dsh-wf-row + .dsh-wf-row {
+  border-top: 1px solid var(--dsw-alias-border-l2, rgba(118, 137, 166, 0.12));
+}
+.dsh-wf-label-box {
+  flex-direction: column;
+  flex: 1;
+  gap: 3px;
+  min-width: 0;
+  display: flex;
+}
+.dsh-wf-label {
+  font-size: 13.5px;
+  font-weight: 550;
+  color: var(--dsw-alias-label-primary, #1f2328);
+}
+.dsh-wf-hint {
+  color: var(--dsw-alias-label-tertiary, #8b93a1);
+  font-size: 12px;
+  line-height: 18px;
+}
+.dsh-wf-ctrl {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.dsh-wf-seg {
+  border: 1px solid var(--dsw-alias-border-l2, #e5e7eb);
+  border-radius: 8px;
+  gap: 2px;
+  padding: 2px;
+  display: inline-flex;
+  background: var(--dsw-alias-bg-layer-1, rgba(255, 255, 255, 0.05));
+}
+.dsh-wf-seg-btn {
+  font: inherit;
+  color: var(--dsw-alias-label-secondary, #6b7280);
+  cursor: pointer;
+  background: 0 0;
+  border: none;
+  border-radius: 6px;
+  padding: 4px 10px;
+  font-size: 12px;
+  line-height: 18px;
+  transition: all 0.15s;
+}
+.dsh-wf-seg-btn:hover {
+  color: var(--dsw-alias-label-primary, #1f2328);
+}
+.dsh-wf-seg-active {
+  background: var(--dsw-alias-bg-layer-3, #eef0f4);
+  color: var(--dsw-alias-brand-primary, #4f6ef7);
+  font-weight: 600;
+  box-shadow: 0 1px 2px rgba(0,0,0,0.05);
+}
+.dsh-wf-input {
+  box-sizing: border-box;
+  border: 1px solid var(--dsw-alias-border-l2, #d1d5db);
+  background: var(--dsw-alias-bg-layer-3, #fff);
+  width: 64px;
+  text-align: center;
+  color: var(--dsw-alias-label-primary, #1f2328);
+  font: inherit;
+  border-radius: 7px;
+  padding: 4px 6px;
+  font-size: 12.5px;
+  line-height: 18px;
+}
+.dsh-wf-input:focus {
+  border-color: var(--dsw-alias-brand-primary, #4f6ef7);
+  outline: 2px solid color-mix(in srgb, var(--dsw-alias-brand-primary, #4f6ef7) 18%, transparent);
+}
+.dsh-wf-toggle {
+  position: relative;
+  display: inline-block;
+  width: 40px;
+  height: 22px;
+  cursor: pointer;
+}
+.dsh-wf-toggle input {
+  opacity: 0;
+  width: 0;
+  height: 0;
+  position: absolute;
+}
+.dsh-wf-toggle-track {
+  position: absolute;
+  top: 0; left: 0; right: 0; bottom: 0;
+  background-color: var(--dsw-alias-border-l2, #ccc);
+  transition: .2s cubic-bezier(.4, 0, .2, 1);
+  border-radius: 22px;
+}
+.dsh-wf-toggle input:checked + .dsh-wf-toggle-track {
+  background-color: var(--dsw-alias-brand-primary, #4f6ef7);
+}
+.dsh-wf-toggle-thumb {
+  position: absolute;
+  height: 16px;
+  width: 16px;
+  left: 3px;
+  bottom: 3px;
+  background-color: white;
+  transition: .2s cubic-bezier(.4, 0, .2, 1);
+  border-radius: 50%;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.2);
+}
+.dsh-wf-toggle input:checked + .dsh-wf-toggle-track .dsh-wf-toggle-thumb {
+  transform: translateX(18px);
+}
+.dsh-wf-footer {
+  margin-top: 8px;
+  padding-top: 10px;
+  border-top: 1px solid var(--dsw-alias-border-l2, rgba(118, 137, 166, 0.12));
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.dsh-wf-saved-hint {
+  font-size: 11.5px;
+  color: var(--dsw-alias-state-success-primary, #10b981);
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.dsh-wf-btn-reset {
+  background: transparent;
+  border: 1px solid var(--dsw-alias-border-l2, #e5e7eb);
+  border-radius: 6px;
+  padding: 3px 10px;
+  font-size: 12px;
+  color: var(--dsw-alias-label-secondary, #6b7280);
+  cursor: pointer;
+  transition: all 0.15s;
+}
+.dsh-wf-btn-reset:hover {
+  background: var(--dsw-alias-bg-layer-2, rgba(255,255,255,0.08));
+  color: var(--dsw-alias-label-primary, #1f2328);
+}
+`
+  document.head.appendChild(style)
+}
+
+export function WorkspaceFilesSettingsCard(): JSX.Element {
+  const [open, setOpen] = useState(false)
+  const [config, setConfig] = useState<WorkspaceFilesConfig>(() => loadWorkspaceFilesConfig())
+  const [savedTick, setSavedTick] = useState(false)
+
+  useEffect(() => {
+    ensureSettingsStyle()
+  }, [])
+
+  const updateConfig = (patch: Partial<WorkspaceFilesConfig>) => {
+    const next = { ...config, ...patch }
+    setConfig(next)
+    saveWorkspaceFilesConfig(next)
+    setSavedTick(true)
+    setTimeout(() => setSavedTick(false), 2000)
+  }
+
+  const handleDepthSelect = (depth: number) => {
+    updateConfig({ maxDepth: depth })
+  }
+
+  const handleDepthInput = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const val = parseInt(e.target.value, 10)
+    if (!isNaN(val) && val >= 1 && val <= 100) {
+      updateConfig({ maxDepth: val })
+    }
+  }
+
+  const handleToggleHidden = () => {
+    updateConfig({ showHidden: !config.showHidden })
+  }
+
+  const handleReset = () => {
+    const def = { maxDepth: 16, showHidden: false }
+    setConfig(def)
+    saveWorkspaceFilesConfig(def)
+    setSavedTick(true)
+    setTimeout(() => setSavedTick(false), 2000)
+  }
+
+  return (
+    <div className={open ? 'dsh-wf-card dsh-wf-card-open' : 'dsh-wf-card'}>
+      <button
+        type="button"
+        className="dsh-wf-header"
+        aria-expanded={open}
+        onClick={() => setOpen(!open)}
+      >
+        <div className="dsh-wf-head-text">
+          <div className="dsh-wf-name">
+            <span>工作区文件</span>
+            <span className="dsh-wf-version">v0.2.1</span>
+          </div>
+          <div className="dsh-wf-desc">
+            浏览与检索工作区文件树，支持递归目录扫描与一键引用。
+          </div>
+        </div>
+        <span className={open ? 'dsh-wf-chevron dsh-wf-chevron-open' : 'dsh-wf-chevron'}>
+          <IconChevronDown size={14} />
+        </span>
+      </button>
+
+      {open && (
+        <div className="dsh-wf-body">
+          <div className="dsh-wf-row">
+            <div className="dsh-wf-label-box">
+              <div className="dsh-wf-label">目录扫描最大深度</div>
+              <div className="dsh-wf-hint">
+                工作区递归扫描的最大目录层级（默认 16，范围 1~100）。若工程目录较深可适当调大。
+              </div>
+            </div>
+            <div className="dsh-wf-ctrl">
+              <div className="dsh-wf-seg">
+                {[8, 16, 32, 64].map((d) => (
+                  <button
+                    key={d}
+                    type="button"
+                    className={config.maxDepth === d ? 'dsh-wf-seg-btn dsh-wf-seg-active' : 'dsh-wf-seg-btn'}
+                    onClick={() => handleDepthSelect(d)}
+                  >
+                    {d}
+                  </button>
+                ))}
+              </div>
+              <input
+                type="number"
+                min="1"
+                max="100"
+                className="dsh-wf-input"
+                value={config.maxDepth}
+                onChange={handleDepthInput}
+                title="自定义深度 (1-100)"
+              />
+            </div>
+          </div>
+
+          <div className="dsh-wf-row">
+            <div className="dsh-wf-label-box">
+              <div className="dsh-wf-label">默认显示隐藏文件</div>
+              <div className="dsh-wf-hint">
+                打开文件树时是否默认展示以点开头的隐藏文件或文件夹（如 .gitignore, .env 等）。
+              </div>
+            </div>
+            <div className="dsh-wf-ctrl">
+              <label className="dsh-wf-toggle">
+                <input
+                  type="checkbox"
+                  checked={config.showHidden}
+                  onChange={handleToggleHidden}
+                />
+                <span className="dsh-wf-toggle-track">
+                  <span className="dsh-wf-toggle-thumb" />
+                </span>
+              </label>
+            </div>
+          </div>
+
+          <div className="dsh-wf-footer">
+            <div>
+              {savedTick ? (
+                <span className="dsh-wf-saved-hint">
+                  <IconCheck size={12} />
+                  <span>已保存设置</span>
+                </span>
+              ) : (
+                <span style={{ fontSize: 11, color: 'var(--dsw-alias-label-tertiary, #8b93a1)' }}>
+                  设置改动即时生效并同步至工作区文件树
+                </span>
+              )}
+            </div>
+            <button
+              type="button"
+              className="dsh-wf-btn-reset"
+              onClick={handleReset}
+            >
+              恢复默认
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
+  )
 }
 
 /* ── Main Workspace Files View ── */
@@ -129,7 +549,8 @@ function WorkspaceFilesView({
   const [query, setQuery] = useState('')
   const [toast, setToast] = useState<string | null>(null)
   const [expandedPaths, setExpandedPaths] = useState<Set<string>>(() => new Set())
-  const [showHidden, setShowHidden] = useState(false)
+  const [activeConfig, setActiveConfig] = useState<WorkspaceFilesConfig>(() => loadWorkspaceFilesConfig())
+  const [showHidden, setShowHidden] = useState(() => loadWorkspaceFilesConfig().showHidden)
 
   const toastTimer = useRef<number | null>(null)
 
@@ -139,11 +560,27 @@ function WorkspaceFilesView({
     toastTimer.current = window.setTimeout(() => setToast(null), 2000)
   }, [])
 
+  useEffect(() => {
+    const handleCfgChange = (e: any) => {
+      if (e.detail) {
+        setActiveConfig(e.detail)
+        setShowHidden(Boolean(e.detail.showHidden))
+      }
+    }
+    window.addEventListener('dsh-workspace-files:config-change', handleCfgChange)
+    return () => window.removeEventListener('dsh-workspace-files:config-change', handleCfgChange)
+  }, [])
+
   const loadTree = useCallback(async (quiet = false) => {
     if (!quiet) setLoading(true)
     setError(null)
     try {
-      const res = await call<WorkspaceFilesResult>('files.tree', { sessionId, cwd, showHidden })
+      const res = await call<WorkspaceFilesResult>('files.tree', {
+        sessionId,
+        cwd,
+        showHidden,
+        maxDepth: activeConfig.maxDepth,
+      })
       setData(res)
 
       // 默认折叠，并从 localStorage 恢复已记录的展开状态
@@ -159,7 +596,7 @@ function WorkspaceFilesView({
     } finally {
       if (!quiet) setLoading(false)
     }
-  }, [sessionId, cwd, showHidden])
+  }, [sessionId, cwd, showHidden, activeConfig.maxDepth])
 
   useEffect(() => {
     void loadTree()
