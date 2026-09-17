@@ -13,6 +13,8 @@ import {
   IconCollapseAll,
   IconCopy,
   IconExpandAll,
+  IconExplorer,
+  IconExternalApp,
   IconFolder,
   IconList,
   IconRefresh,
@@ -582,7 +584,7 @@ function WorkspaceFilesView({
     return () => window.removeEventListener('dsh-workspace-files:config-change', handleCfgChange)
   }, [])
 
-  const loadTree = useCallback(async (quiet = false) => {
+  const loadTree = useCallback(async (quiet = false, forceRefresh = false) => {
     if (!quiet) setLoading(true)
     setError(null)
     try {
@@ -591,6 +593,7 @@ function WorkspaceFilesView({
         cwd,
         showHidden,
         maxDepth: activeConfig.maxDepth,
+        forceRefresh,
       })
       setData(res)
 
@@ -723,6 +726,60 @@ function WorkspaceFilesView({
         showToastMsg(`已复制引用: ${mentionText.trim()}`)
       }
     })
+  }
+
+  // 在文件资源管理器中定位/打开
+  const handleRevealInExplorer = (e: React.MouseEvent, item: FileItem) => {
+    e.stopPropagation()
+    fetch('/dsh-workspace-files/api/files.open', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        action: 'reveal',
+        path: item.path,
+        isDirectory: Boolean(item.isDirectory),
+        sessionId,
+        cwd,
+      }),
+    })
+      .then(res => res.json())
+      .then(data => {
+        if (data.ok) {
+          showToastMsg(`已在资源管理器中显示: ${item.name}`)
+        } else {
+          showToastMsg(`打开失败: ${data.error?.message || '未知错误'}`)
+        }
+      })
+      .catch(err => {
+        showToastMsg(`请求失败: ${err?.message || String(err)}`)
+      })
+  }
+
+  // 用系统默认应用打开
+  const handleOpenDefaultApp = (e: React.MouseEvent, item: FileItem) => {
+    e.stopPropagation()
+    fetch('/dsh-workspace-files/api/files.open', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        action: 'openDefault',
+        path: item.path,
+        isDirectory: Boolean(item.isDirectory),
+        sessionId,
+        cwd,
+      }),
+    })
+      .then(res => res.json())
+      .then(data => {
+        if (data.ok) {
+          showToastMsg(`已启动系统应用打开: ${item.name}`)
+        } else {
+          showToastMsg(`打开失败: ${data.error?.message || '未知错误'}`)
+        }
+      })
+      .catch(err => {
+        showToastMsg(`请求失败: ${err?.message || String(err)}`)
+      })
   }
 
   const [searchViewMode, setSearchViewMode] = useState<'flat' | 'tree'>('flat')
@@ -885,7 +942,7 @@ function WorkspaceFilesView({
           <button
             type="button"
             className="dsh-files-tool-btn"
-            onClick={() => void loadTree(true)}
+            onClick={() => void loadTree(false, true)}
             disabled={loading}
             title="刷新文件树"
           >
@@ -927,7 +984,10 @@ function WorkspaceFilesView({
           /* ── 扁平搜索结果列表 ── */
           <div className="dsh-files-search-container">
             <div className="dsh-files-search-header">
-              <span className="dsh-files-search-count">找到 {flatSearchResults.length} 个匹配项</span>
+              <span className="dsh-files-search-count">
+                找到 {flatSearchResults.length} 个匹配项
+                {flatSearchResults.length > 150 ? '（展示前 150 项）' : ''}
+              </span>
               <button
                 type="button"
                 className="dsh-files-view-toggle-btn"
@@ -939,7 +999,7 @@ function WorkspaceFilesView({
               </button>
             </div>
             <div className="dsh-files-flat-list">
-              {flatSearchResults.map(({ item, parentDir }) => (
+              {flatSearchResults.slice(0, 150).map(({ item, parentDir }) => (
                 <div
                   key={item.path}
                   className={`dsh-files-flat-row ${item.isDirectory ? 'is-directory' : ''}`}
@@ -987,6 +1047,22 @@ function WorkspaceFilesView({
                     <button
                       type="button"
                       className="dsh-files-action-btn"
+                      onClick={e => handleRevealInExplorer(e, item)}
+                      title={`在文件资源管理器中显示此${item.isDirectory ? '目录' : '文件'}`}
+                    >
+                      <IconExplorer size={12} />
+                    </button>
+                    <button
+                      type="button"
+                      className="dsh-files-action-btn"
+                      onClick={e => handleOpenDefaultApp(e, item)}
+                      title={`用系统默认应用打开此${item.isDirectory ? '目录' : '文件'}`}
+                    >
+                      <IconExternalApp size={12} />
+                    </button>
+                    <button
+                      type="button"
+                      className="dsh-files-action-btn"
                       onClick={e => handleCopyPath(e, item.path)}
                       title="复制相对路径"
                     >
@@ -995,6 +1071,11 @@ function WorkspaceFilesView({
                   </div>
                 </div>
               ))}
+              {flatSearchResults.length > 150 && (
+                <div style={{ padding: '10px 14px', fontSize: 11, textAlign: 'center', color: 'var(--dsw-alias-label-tertiary, #8b93a1)', borderTop: '1px dashed var(--dsw-alias-border-l2, #e5e7eb)' }}>
+                  匹配项较多，已限制展示前 150 项以保证流畅度，请输入更详细关键字
+                </div>
+              )}
             </div>
           </div>
         ) : (
@@ -1037,6 +1118,8 @@ function WorkspaceFilesView({
                 onOpenFile={onOpenFile}
                 onMention={handleMention}
                 onCopyPath={handleCopyPath}
+                onRevealInExplorer={handleRevealInExplorer}
+                onOpenDefaultApp={handleOpenDefaultApp}
               />
             ))}
           </div>
@@ -1065,8 +1148,22 @@ function FileTreeNode(props: {
   onOpenFile: (path: string) => void
   onMention: (e: React.MouseEvent, item: FileItem) => void
   onCopyPath: (e: React.MouseEvent, path: string) => void
+  onRevealInExplorer: (e: React.MouseEvent, item: FileItem) => void
+  onOpenDefaultApp: (e: React.MouseEvent, item: FileItem) => void
 }): JSX.Element {
-  const { item, depth, query, isSearchMode, expandedPaths, onToggleExpand, onOpenFile, onMention, onCopyPath } = props
+  const {
+    item,
+    depth,
+    query,
+    isSearchMode,
+    expandedPaths,
+    onToggleExpand,
+    onOpenFile,
+    onMention,
+    onCopyPath,
+    onRevealInExplorer,
+    onOpenDefaultApp,
+  } = props
   const isExpanded = expandedPaths.has(item.path)
 
   if (item.isDirectory) {
@@ -1101,6 +1198,22 @@ function FileTreeNode(props: {
             <button
               type="button"
               className="dsh-files-action-btn"
+              onClick={e => onRevealInExplorer(e, item)}
+              title="在文件资源管理器中打开此目录"
+            >
+              <IconExplorer size={12} />
+            </button>
+            <button
+              type="button"
+              className="dsh-files-action-btn"
+              onClick={e => onOpenDefaultApp(e, item)}
+              title="用系统默认应用打开此目录"
+            >
+              <IconExternalApp size={12} />
+            </button>
+            <button
+              type="button"
+              className="dsh-files-action-btn"
               onClick={e => onCopyPath(e, item.path)}
               title="复制目录路径"
             >
@@ -1122,6 +1235,8 @@ function FileTreeNode(props: {
                 onOpenFile={onOpenFile}
                 onMention={onMention}
                 onCopyPath={onCopyPath}
+                onRevealInExplorer={onRevealInExplorer}
+                onOpenDefaultApp={onOpenDefaultApp}
               />
             ))}
           </div>
@@ -1160,6 +1275,22 @@ function FileTreeNode(props: {
         >
           <IconAt size={13} />
           <span className="dsh-files-action-at-text">@引用</span>
+        </button>
+        <button
+          type="button"
+          className="dsh-files-action-btn"
+          onClick={e => onRevealInExplorer(e, item)}
+          title="在文件资源管理器中显示此文件"
+        >
+          <IconExplorer size={12} />
+        </button>
+        <button
+          type="button"
+          className="dsh-files-action-btn"
+          onClick={e => onOpenDefaultApp(e, item)}
+          title="用系统默认应用打开此文件"
+        >
+          <IconExternalApp size={12} />
         </button>
         <button
           type="button"

@@ -17,21 +17,60 @@ export interface WorkspaceFilesResult {
   totalDirs: number
 }
 
+// 常见大型构建产物、虚拟环境、开发缓存与三方依赖黑名单目录
 const DEFAULT_IGNORED_DIRS = new Set([
   '.git',
   '.svn',
   '.hg',
   'node_modules',
+  '.pnpm-store',
   '.turbo',
   '.next',
+  '.nuxt',
+  '.output',
   'dist',
   'build',
-  '.pnpm-store',
+  'out',
+  '.cache',
+  '.idea',
+  '.vscode',
+  '.husky',
+  'venv',
+  '.venv',
+  'env',
+  '__pycache__',
+  'target',      // Rust / Cargo / Maven
+  '.gradle',
+  '.cargo',
+  'vendor',      // PHP / Go
+  'coverage',
+  'tmp',
+  'temp',
+  'logs',
+  '.dsh',
 ])
 
 function isWithin(parent: string, child: string): boolean {
   const rel = relative(parent, child)
   return !rel.startsWith('..') && !rel.includes(':')
+}
+
+// 快速解析工作区根目录的 .gitignore，避免深入被 git 忽略的庞大目录
+async function loadGitIgnoreNames(rootDir: string): Promise<Set<string>> {
+  const names = new Set<string>()
+  try {
+    const gitignorePath = join(rootDir, '.gitignore')
+    const content = await fs.readFile(gitignorePath, 'utf8')
+    for (const rawLine of content.split(/\r?\n/)) {
+      const line = rawLine.trim()
+      if (!line || line.startsWith('#') || line.startsWith('!')) continue
+      const clean = line.replace(/^\/+/, '').replace(/\/+$/, '')
+      if (clean && !clean.includes('*') && !clean.includes('?') && !clean.includes('/')) {
+        names.add(clean)
+      }
+    }
+  } catch {}
+  return names
 }
 
 export async function scanWorkspaceTree(
@@ -43,11 +82,15 @@ export async function scanWorkspaceTree(
   const showHidden = options.showHidden ?? false
   const showIgnored = options.showIgnored ?? false
 
+  const gitIgnoredNames = showIgnored ? new Set<string>() : await loadGitIgnoreNames(root)
+
   let totalFiles = 0
   let totalDirs = 0
+  let totalNodes = 0
+  const MAX_NODES_SAFETY_LIMIT = 30000 // 防爆保护阈值
 
   async function walk(dirPath: string, currentDepth: number): Promise<FileItem[]> {
-    if (currentDepth > maxDepth) return []
+    if (currentDepth > maxDepth || totalNodes >= MAX_NODES_SAFETY_LIMIT) return []
 
     let dirents: import('node:fs').Dirent[]
     try {
@@ -56,26 +99,23 @@ export async function scanWorkspaceTree(
       return []
     }
 
-    // Sort: directories first, then files alphabetically
-    dirents.sort((a, b) => {
-      if (a.isDirectory() && !b.isDirectory()) return -1
-      if (!a.isDirectory() && b.isDirectory()) return 1
-      return a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: 'base' })
-    })
-
-    const items: FileItem[] = []
+    const dirTasks: Array<Promise<FileItem | null>> = []
+    const fileItems: FileItem[] = []
 
     for (const ent of dirents) {
+      if (totalNodes >= MAX_NODES_SAFETY_LIMIT) break
+
       const name = ent.name
 
-      // Hidden file filter (starts with .)
+      // 隐藏文件/文件夹过滤（以 . 开头）
       if (!showHidden && name.startsWith('.') && name !== '.gitignore' && name !== '.env') {
         if (!showIgnored) continue
       }
 
-      // Ignored directory filter
-      if (!showIgnored && ent.isDirectory() && DEFAULT_IGNORED_DIRS.has(name)) {
-        continue
+      // 忽略目录及 .gitignore 规则过滤
+      if (!showIgnored) {
+        if (ent.isDirectory() && DEFAULT_IGNORED_DIRS.has(name)) continue
+        if (gitIgnoredNames.has(name)) continue
       }
 
       const fullPath = join(dirPath, name)
@@ -85,34 +125,35 @@ export async function scanWorkspaceTree(
 
       if (ent.isDirectory()) {
         totalDirs += 1
-        const children = await walk(fullPath, currentDepth + 1)
-        items.push({
-          name,
-          path: relPath,
-          isDirectory: true,
-          children,
-        })
+        totalNodes += 1
+        dirTasks.push(
+          walk(fullPath, currentDepth + 1).then(children => ({
+            name,
+            path: relPath,
+            isDirectory: true,
+            children,
+          })),
+        )
       } else {
         totalFiles += 1
-        let size: number | undefined
-        let mtime: number | undefined
-        try {
-          const st = await fs.stat(fullPath)
-          size = st.size
-          mtime = st.mtimeMs
-        } catch {}
-
-        items.push({
+        totalNodes += 1
+        fileItems.push({
           name,
           path: relPath,
           isDirectory: false,
-          size,
-          mtime,
         })
       }
     }
 
-    return items
+    // 并行处理子目录
+    const dirResults = await Promise.all(dirTasks)
+    const validDirs = dirResults.filter((d): d is FileItem => d !== null)
+
+    // 目录优先，按自然字母排序
+    validDirs.sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: 'base' }))
+    fileItems.sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: 'base' }))
+
+    return [...validDirs, ...fileItems]
   }
 
   const items = await walk(root, 1)

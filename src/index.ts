@@ -1,3 +1,5 @@
+import { exec, spawn } from 'node:child_process'
+import { isAbsolute, resolve } from 'node:path'
 import type { Context } from '@deepseek-ai/cordis'
 import Schema from '@deepseek-ai/schemastery'
 import { scanWorkspaceTree } from './files.js'
@@ -92,6 +94,13 @@ function resolveCwd(ctx: Context, body: Record<string, any>): string {
 
 export const SETTINGS_NS = 'workspace-files'
 
+interface CacheEntry {
+  timestamp: number
+  result: any
+}
+const scanCache = new Map<string, CacheEntry>()
+const CACHE_TTL_MS = 20_000 // 20 秒热缓存
+
 export function apply(ctx: Context, config: Config = {}): void {
   const liveConfig = {
     maxDepth: typeof config?.maxDepth === 'number' && config.maxDepth > 0 ? config.maxDepth : 16,
@@ -147,6 +156,52 @@ export function apply(ctx: Context, config: Config = {}): void {
       return
     }
 
+    if (method === 'files.open') {
+      try {
+        const body = await readJsonBody(req)
+        const cwd = resolveCwd(ctx, body)
+        const rawPath = String(body.path || '')
+        if (!rawPath) {
+          writeJson(res, 400, { ok: false, error: { message: 'Missing path parameter' } })
+          return
+        }
+
+        const fullPath = isAbsolute(rawPath) ? rawPath : resolve(cwd, rawPath)
+        const action = body.action || 'reveal'
+        const isDirectory = Boolean(body.isDirectory)
+
+        if (process.platform === 'win32') {
+          const winPath = fullPath.replace(/\//g, '\\')
+          if (action === 'reveal') {
+            if (isDirectory) {
+              spawn('explorer.exe', [winPath], { detached: true, stdio: 'ignore' }).unref()
+            } else {
+              spawn('explorer.exe', [`/select,${winPath}`], { detached: true, stdio: 'ignore' }).unref()
+            }
+          } else {
+            exec(`start "" "${winPath.replace(/"/g, '\\"')}"`, { windowsHide: true })
+          }
+        } else if (process.platform === 'darwin') {
+          if (action === 'reveal') {
+            spawn('open', [isDirectory ? fullPath : '-R', fullPath], { detached: true, stdio: 'ignore' }).unref()
+          } else {
+            spawn('open', [fullPath], { detached: true, stdio: 'ignore' }).unref()
+          }
+        } else {
+          if (action === 'reveal') {
+            spawn('xdg-open', [isDirectory ? fullPath : resolve(fullPath, '..')], { detached: true, stdio: 'ignore' }).unref()
+          } else {
+            spawn('xdg-open', [fullPath], { detached: true, stdio: 'ignore' }).unref()
+          }
+        }
+
+        writeJson(res, 200, { ok: true })
+      } catch (err: any) {
+        writeJson(res, 500, { ok: false, error: { message: err?.message || String(err) } })
+      }
+      return
+    }
+
     if (method !== 'files.tree') {
       writeJson(res, 404, { ok: false, error: { message: `Unknown method: ${method}` } })
       return
@@ -155,11 +210,29 @@ export function apply(ctx: Context, config: Config = {}): void {
     try {
       const body = await readJsonBody(req)
       const cwd = resolveCwd(ctx, body)
+      const showHidden = typeof body.showHidden === 'boolean' ? body.showHidden : liveConfig.showHidden
+      const showIgnored = Boolean(body.showIgnored)
+      const maxDepth = typeof body.maxDepth === 'number' && body.maxDepth > 0 ? body.maxDepth : liveConfig.maxDepth
+      const forceRefresh = Boolean(body.forceRefresh)
+
+      const cacheKey = `${cwd}::${showHidden}::${showIgnored}::${maxDepth}`
+      const now = Date.now()
+
+      if (!forceRefresh) {
+        const cached = scanCache.get(cacheKey)
+        if (cached && now - cached.timestamp < CACHE_TTL_MS) {
+          writeJson(res, 200, { ok: true, value: cached.result, cached: true })
+          return
+        }
+      }
+
       const result = await scanWorkspaceTree(cwd, {
-        showHidden: typeof body.showHidden === 'boolean' ? body.showHidden : liveConfig.showHidden,
-        showIgnored: Boolean(body.showIgnored),
-        maxDepth: typeof body.maxDepth === 'number' && body.maxDepth > 0 ? body.maxDepth : liveConfig.maxDepth,
+        showHidden,
+        showIgnored,
+        maxDepth,
       })
+
+      scanCache.set(cacheKey, { timestamp: now, result })
       writeJson(res, 200, { ok: true, value: result })
     } catch (err: any) {
       writeJson(res, 500, { ok: false, error: { message: err?.message || String(err) } })

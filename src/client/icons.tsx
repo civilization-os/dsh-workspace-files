@@ -167,3 +167,22 @@ export function IconChevronDown({ size = 14 }: { size?: number }): JSX.Element {
   )
 }
 
+export function IconExplorer({ size = 12 }: { size?: number }): JSX.Element {
+  return (
+    <svg width={size} height={size} viewBox="0 0 16 16" fill="currentColor" style={{ display: 'inline-block', verticalAlign: 'middle', flexShrink: 0 }}>
+      <path d="M1.75 2A1.75 1.75 0 000 3.75v8.5C0 13.216.784 14 1.75 14h12.5A1.75 1.75 0 0016 12.25v-6.5A1.75 1.75 0 0014.25 4H7.5a.25.25 0 01-.2-.1l-.9-1.2C6.07 2.26 5.55 2 5 2H1.75zM1.5 5.5h13v6.75a.25.25 0 01-.25.25H1.75a.25.25 0 01-.25-.25V5.5z" />
+    </svg>
+  )
+}
+
+export function IconExternalApp({ size = 12 }: { size?: number }): JSX.Element {
+  return (
+    <svg width={size} height={size} viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.35" strokeLinecap="round" strokeLinejoin="round" style={{ display: 'inline-block', verticalAlign: 'middle', flexShrink: 0 }}>
+      <path d="M12.5 9.5v3.25a1.25 1.25 0 01-1.25 1.25H3.25A1.25 1.25 0 012 12.75V4.75A1.25 1.25 0 013.25 3.5H6.5" />
+      <polyline points="10 2 14 2 14 6" />
+      <line x1="6.5" y1="9.5" x2="13.5" y2="2.5" />
+    </svg>
+  )
+}
+
+
