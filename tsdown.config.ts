@@ -1,6 +1,8 @@
+import { readFileSync } from 'node:fs'
 import type { UserConfig } from 'tsdown'
 
 const PLUGIN_ID = '@civilization/dsh-workspace-files'
+const PLUGIN_VERSION: string = JSON.parse(readFileSync(new URL('./package.json', import.meta.url), 'utf8')).version
 
 const PLATFORM_MODULES = [
   'react',
@@ -35,6 +37,7 @@ export default [
       'process.env.NODE_ENV': JSON.stringify(process.env.NODE_ENV ?? 'production'),
       'import.meta.env.MODE': JSON.stringify(process.env.NODE_ENV ?? 'production'),
       'import.meta.env': JSON.stringify({ MODE: process.env.NODE_ENV ?? 'production' }),
+      __PLUGIN_VERSION__: JSON.stringify(PLUGIN_VERSION),
     },
     outputOptions: {
       entryFileNames: 'client.js',
