@@ -451,7 +451,7 @@ export function WorkspaceFilesSettingsCard(): JSX.Element {
         <div className="dsh-wf-head-text">
           <div className="dsh-wf-name">
             <span>工作区文件树</span>
-            <span className="dsh-wf-version">v0.3.1</span>
+            <span className="dsh-wf-version">v0.3.2</span>
           </div>
           <div className="dsh-wf-desc">
             全量项目文件树浏览、即时检索与 @-mention 会话一键引用。
