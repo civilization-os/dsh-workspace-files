@@ -1,14 +1,16 @@
 /**
  * Browser entry for the enhanced workspace files explorer plugin.
+ * High-performance virtualized flat-row rendering with DSH Design Tokens and UI Motion.
  * Overrides DSH official 'files' tab using 'priority: extension'.
  */
 import type { Context } from '@deepseek-ai/cordis'
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import React, { memo, useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } from 'react'
+import type { JSX } from 'react'
 import {
   FileGlyphIcon,
   IconAt,
   IconCheck,
-  IconChevronDown,
+  IconChevronRight,
   IconClose,
   IconCollapseAll,
   IconCopy,
@@ -90,7 +92,6 @@ export function apply(ctx: Context): void {
   const slots = (ctx as any).slots
 
   if (sidebarRightTabs && slots) {
-    // 关键：kind: 'files', priority: 'extension'（Rank 3 > builtin 2），完美接管官方文件标签页
     ctx.effect(() => sidebarRightTabs.register({
       id: OFFICIAL_FILES_TAB_ID,
       kind: 'files',
@@ -115,7 +116,6 @@ export function apply(ctx: Context): void {
     }, WorkspaceFilesTabTitle)), 'dsh-workspace-files: official tab title')
   }
 
-  // 注入设置中心“插件配置”卡片（命名空间必须为 workspace-files，与 Host settings 服务注册一致）
   const registerSettingsCard = (targetCtx: any) => {
     if (!targetCtx?.slots) return
     targetCtx.effect?.(() => targetCtx.slots.inject('settings.plugin.item', function* () {
@@ -186,16 +186,16 @@ function ensureSettingsStyle() {
   style.id = id
   style.textContent = `
 .dsh-wf-card {
-  border: 1px solid var(--dsw-alias-border-l2, #e5e7eb);
-  background: var(--dsw-alias-bg-layer-3, #fff);
-  border-radius: 12px;
+  border: 0.5px solid var(--dsw-alias-border-l1);
+  background: var(--dsw-alias-fill-base, #ffffff);
+  border-radius: var(--dsw-radius-md, 8px);
   list-style: none;
-  transition: border-color .16s, background .16s;
+  transition: border-color 0.16s, background 0.16s;
   box-sizing: border-box;
 }
 .dsh-wf-card-open {
-  background: var(--dsw-alias-bg-layer-2, #f7f8fa);
-  border-color: var(--dsw-alias-label-dimmed, #c8ccd4);
+  background: var(--dsw-alias-fill-base, #ffffff);
+  border-color: var(--dsw-alias-state-business-primary);
 }
 .dsh-wf-header {
   -webkit-appearance: none;
@@ -205,24 +205,24 @@ function ensureSettingsStyle() {
   color: inherit;
   text-align: left;
   cursor: pointer;
-  background: 0 0;
+  background: transparent;
   border: 0;
-  border-radius: 12px;
+  border-radius: var(--dsw-radius-md, 8px);
   align-items: center;
   gap: 12px;
-  padding: 14px 16px;
+  padding: 12px 14px;
   display: flex;
 }
 .dsh-wf-head-text {
   flex-direction: column;
   flex: 1;
-  gap: 4px;
+  gap: 3px;
   min-width: 0;
   display: flex;
 }
 .dsh-wf-name {
-  color: var(--dsw-alias-label-primary, #1f2328);
-  font-size: 15px;
+  color: var(--dsw-alias-label-primary);
+  font-size: 14px;
   font-weight: 600;
   line-height: 1.4;
   display: flex;
@@ -230,38 +230,38 @@ function ensureSettingsStyle() {
   gap: 8px;
 }
 .dsh-wf-version {
-  font-size: 12px;
+  font-size: 11px;
   font-weight: 400;
-  color: var(--dsw-alias-label-tertiary, #8b93a1);
+  color: var(--dsw-alias-label-tertiary);
 }
 .dsh-wf-desc {
-  color: var(--dsw-alias-label-tertiary, #8b93a1);
-  font-size: 13px;
+  color: var(--dsw-alias-label-secondary);
+  font-size: 12px;
   line-height: 1.5;
 }
 .dsh-wf-chevron {
-  color: var(--dsw-alias-label-tertiary, #8b93a1);
+  color: var(--dsw-alias-label-tertiary);
   flex: none;
-  transition: transform .16s ease-in-out;
+  transition: transform 0.18s cubic-bezier(0.16, 1, 0.3, 1);
   display: inline-flex;
 }
 .dsh-wf-chevron-open {
   transform: rotate(180deg);
 }
 .dsh-wf-body {
-  border-top: 1px solid var(--dsw-alias-border-l2, #e5e7eb);
-  margin: 0 16px;
+  border-top: 0.5px solid var(--dsw-alias-border-l2);
+  margin: 0 14px;
   padding: 8px 0 12px;
 }
 .dsh-wf-row {
   align-items: center;
   gap: 16px;
-  padding: 12px 0;
+  padding: 10px 0;
   display: flex;
   justify-content: space-between;
 }
 .dsh-wf-row + .dsh-wf-row {
-  border-top: 1px solid var(--dsw-alias-border-l2, rgba(118, 137, 166, 0.12));
+  border-top: 0.5px solid var(--dsw-alias-border-l2);
 }
 .dsh-wf-label-box {
   flex-direction: column;
@@ -271,14 +271,14 @@ function ensureSettingsStyle() {
   display: flex;
 }
 .dsh-wf-label {
-  font-size: 13.5px;
+  font-size: 13px;
   font-weight: 550;
-  color: var(--dsw-alias-label-primary, #1f2328);
+  color: var(--dsw-alias-label-primary);
 }
 .dsh-wf-hint {
-  color: var(--dsw-alias-label-tertiary, #8b93a1);
-  font-size: 12px;
-  line-height: 18px;
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 11.5px;
+  line-height: 16px;
 }
 .dsh-wf-ctrl {
   flex-shrink: 0;
@@ -287,56 +287,56 @@ function ensureSettingsStyle() {
   gap: 8px;
 }
 .dsh-wf-seg {
-  border: 1px solid var(--dsw-alias-border-l2, #e5e7eb);
-  border-radius: 8px;
+  border: 0.5px solid var(--dsw-alias-border-l1);
+  border-radius: var(--dsw-radius-sm, 6px);
   gap: 2px;
   padding: 2px;
   display: inline-flex;
-  background: var(--dsw-alias-bg-layer-1, rgba(255, 255, 255, 0.05));
+  background: var(--dsw-alias-fill-base, #ffffff);
 }
 .dsh-wf-seg-btn {
   font: inherit;
-  color: var(--dsw-alias-label-secondary, #6b7280);
+  color: var(--dsw-alias-label-secondary);
   cursor: pointer;
-  background: 0 0;
+  background: transparent;
   border: none;
-  border-radius: 6px;
-  padding: 4px 10px;
-  font-size: 12px;
-  line-height: 18px;
-  transition: all 0.15s;
+  border-radius: 4px;
+  padding: 3px 8px;
+  font-size: 11.5px;
+  transition: all 0.15s cubic-bezier(0.16, 1, 0.3, 1);
 }
 .dsh-wf-seg-btn:hover {
-  color: var(--dsw-alias-label-primary, #1f2328);
+  color: var(--dsw-alias-label-primary);
+  background: var(--dsw-alias-interactive-bg-hover);
 }
 .dsh-wf-seg-active {
-  background: var(--dsw-alias-bg-layer-3, #eef0f4);
-  color: var(--dsw-alias-brand-primary, #4f6ef7);
+  background: color-mix(in srgb, var(--dsw-alias-state-business-primary) 12%, transparent);
+  color: var(--dsw-alias-state-business-primary);
   font-weight: 600;
-  box-shadow: 0 1px 2px rgba(0,0,0,0.05);
 }
 .dsh-wf-input {
   box-sizing: border-box;
-  border: 1px solid var(--dsw-alias-border-l2, #d1d5db);
-  background: var(--dsw-alias-bg-layer-3, #fff);
-  width: 64px;
+  border: 0.5px solid var(--dsw-alias-border-l1);
+  background: var(--dsw-alias-fill-base, #ffffff);
+  width: 58px;
   text-align: center;
-  color: var(--dsw-alias-label-primary, #1f2328);
+  color: var(--dsw-alias-label-primary);
   font: inherit;
-  border-radius: 7px;
-  padding: 4px 6px;
-  font-size: 12.5px;
-  line-height: 18px;
+  border-radius: 6px;
+  padding: 3px 6px;
+  font-size: 12px;
+  outline: none;
+  transition: border-color 0.15s, box-shadow 0.15s;
 }
 .dsh-wf-input:focus {
-  border-color: var(--dsw-alias-brand-primary, #4f6ef7);
-  outline: 2px solid color-mix(in srgb, var(--dsw-alias-brand-primary, #4f6ef7) 18%, transparent);
+  border-color: var(--dsw-alias-state-business-primary);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--dsw-alias-state-business-primary) 18%, transparent);
 }
 .dsh-wf-toggle {
   position: relative;
   display: inline-block;
-  width: 40px;
-  height: 22px;
+  width: 36px;
+  height: 20px;
   cursor: pointer;
 }
 .dsh-wf-toggle input {
@@ -348,55 +348,55 @@ function ensureSettingsStyle() {
 .dsh-wf-toggle-track {
   position: absolute;
   top: 0; left: 0; right: 0; bottom: 0;
-  background-color: var(--dsw-alias-border-l2, #ccc);
-  transition: .2s cubic-bezier(.4, 0, .2, 1);
-  border-radius: 22px;
+  background-color: var(--dsw-alias-border-l1);
+  transition: 0.18s cubic-bezier(0.16, 1, 0.3, 1);
+  border-radius: 20px;
 }
 .dsh-wf-toggle input:checked + .dsh-wf-toggle-track {
-  background-color: var(--dsw-alias-brand-primary, #4f6ef7);
+  background-color: var(--dsw-alias-state-business-primary);
 }
 .dsh-wf-toggle-thumb {
   position: absolute;
-  height: 16px;
-  width: 16px;
+  height: 14px;
+  width: 14px;
   left: 3px;
   bottom: 3px;
-  background-color: white;
-  transition: .2s cubic-bezier(.4, 0, .2, 1);
+  background-color: #ffffff;
+  transition: 0.18s cubic-bezier(0.16, 1, 0.3, 1);
   border-radius: 50%;
-  box-shadow: 0 1px 3px rgba(0,0,0,0.2);
+  box-shadow: 0 1px 2px rgba(0,0,0,0.18);
 }
 .dsh-wf-toggle input:checked + .dsh-wf-toggle-track .dsh-wf-toggle-thumb {
-  transform: translateX(18px);
+  transform: translateX(16px);
 }
 .dsh-wf-footer {
-  margin-top: 8px;
-  padding-top: 10px;
-  border-top: 1px solid var(--dsw-alias-border-l2, rgba(118, 137, 166, 0.12));
+  margin-top: 6px;
+  padding-top: 8px;
+  border-top: 0.5px solid var(--dsw-alias-border-l2);
   display: flex;
   align-items: center;
   justify-content: space-between;
 }
 .dsh-wf-saved-hint {
-  font-size: 11.5px;
-  color: var(--dsw-alias-state-success-primary, #10b981);
+  font-size: 11px;
+  color: var(--dsw-alias-state-business-primary);
   display: flex;
   align-items: center;
   gap: 4px;
 }
 .dsh-wf-btn-reset {
   background: transparent;
-  border: 1px solid var(--dsw-alias-border-l2, #e5e7eb);
-  border-radius: 6px;
-  padding: 3px 10px;
-  font-size: 12px;
-  color: var(--dsw-alias-label-secondary, #6b7280);
+  border: 0.5px solid var(--dsw-alias-border-l1);
+  border-radius: 4px;
+  padding: 3px 8px;
+  font-size: 11px;
+  color: var(--dsw-alias-label-secondary);
   cursor: pointer;
-  transition: all 0.15s;
+  transition: all 0.12s;
 }
 .dsh-wf-btn-reset:hover {
-  background: var(--dsw-alias-bg-layer-2, rgba(255,255,255,0.08));
-  color: var(--dsw-alias-label-primary, #1f2328);
+  background: var(--dsw-alias-interactive-bg-hover);
+  color: var(--dsw-alias-label-primary);
 }
 `
   document.head.appendChild(style)
@@ -438,29 +438,27 @@ export function WorkspaceFilesSettingsCard(): JSX.Element {
     const def = { maxDepth: 16, showHidden: false }
     setConfig(def)
     saveWorkspaceFilesConfig(def)
-    setSavedTick(true)
-    setTimeout(() => setSavedTick(false), 2000)
   }
 
   return (
-    <div className={open ? 'dsh-wf-card dsh-wf-card-open' : 'dsh-wf-card'}>
+    <div className={`dsh-wf-card ${open ? 'dsh-wf-card-open' : ''}`}>
       <button
         type="button"
         className="dsh-wf-header"
-        aria-expanded={open}
         onClick={() => setOpen(!open)}
       >
+        <FolderGuideGlyph size={22} />
         <div className="dsh-wf-head-text">
           <div className="dsh-wf-name">
-            <span>工作区文件</span>
-            <span className="dsh-wf-version">v0.3.0</span>
+            <span>工作区文件树</span>
+            <span className="dsh-wf-version">v0.3.1</span>
           </div>
           <div className="dsh-wf-desc">
-            浏览与检索工作区文件树，支持递归目录扫描与一键引用。
+            全量项目文件树浏览、即时检索与 @-mention 会话一键引用。
           </div>
         </div>
-        <span className={open ? 'dsh-wf-chevron dsh-wf-chevron-open' : 'dsh-wf-chevron'}>
-          <IconChevronDown size={14} />
+        <span className={`dsh-wf-chevron ${open ? 'dsh-wf-chevron-open' : ''}`}>
+          <IconChevronRight size={14} style={{ transform: open ? 'rotate(90deg)' : 'rotate(0deg)', transition: 'transform 0.16s' }} />
         </span>
       </button>
 
@@ -468,42 +466,42 @@ export function WorkspaceFilesSettingsCard(): JSX.Element {
         <div className="dsh-wf-body">
           <div className="dsh-wf-row">
             <div className="dsh-wf-label-box">
-              <div className="dsh-wf-label">目录扫描最大深度</div>
-              <div className="dsh-wf-hint">
-                工作区递归扫描的最大目录层级（默认 16，范围 1~100）。若工程目录较深可适当调大。
-              </div>
+              <span className="dsh-wf-label">扫描最大深度 (层级)</span>
+              <span className="dsh-wf-hint">
+                控制文件树深入遍历的最大文件夹嵌套层级，防止庞大项目深度过大产生卡顿。
+              </span>
             </div>
             <div className="dsh-wf-ctrl">
               <div className="dsh-wf-seg">
-                {[8, 16, 32, 64].map((d) => (
+                {[8, 16, 24, 32].map(d => (
                   <button
                     key={d}
                     type="button"
-                    className={config.maxDepth === d ? 'dsh-wf-seg-btn dsh-wf-seg-active' : 'dsh-wf-seg-btn'}
+                    className={`dsh-wf-seg-btn ${config.maxDepth === d ? 'dsh-wf-seg-active' : ''}`}
                     onClick={() => handleDepthSelect(d)}
                   >
-                    {d}
+                    {d} 层
                   </button>
                 ))}
               </div>
               <input
                 type="number"
-                min="1"
-                max="100"
+                min={1}
+                max={100}
                 className="dsh-wf-input"
                 value={config.maxDepth}
                 onChange={handleDepthInput}
-                title="自定义深度 (1-100)"
+                title="手动输入层级深度 (1-100)"
               />
             </div>
           </div>
 
           <div className="dsh-wf-row">
             <div className="dsh-wf-label-box">
-              <div className="dsh-wf-label">默认显示隐藏文件</div>
-              <div className="dsh-wf-hint">
-                打开文件树时是否默认展示以点开头的隐藏文件或文件夹（如 .gitignore, .env 等）。
-              </div>
+              <span className="dsh-wf-label">显示以点开头的隐藏文件</span>
+              <span className="dsh-wf-hint">
+                开启后，文件树中将展现如 .env, .editorconfig 等以点开头的配置文件（.git 等缓存黑名单除外）。
+              </span>
             </div>
             <div className="dsh-wf-ctrl">
               <label className="dsh-wf-toggle">
@@ -521,14 +519,10 @@ export function WorkspaceFilesSettingsCard(): JSX.Element {
 
           <div className="dsh-wf-footer">
             <div>
-              {savedTick ? (
+              {savedTick && (
                 <span className="dsh-wf-saved-hint">
                   <IconCheck size={12} />
-                  <span>已保存设置</span>
-                </span>
-              ) : (
-                <span style={{ fontSize: 11, color: 'var(--dsw-alias-label-tertiary, #8b93a1)' }}>
-                  设置改动即时生效并同步至工作区文件树
+                  配置已自动保存并实时同步
                 </span>
               )}
             </div>
@@ -546,6 +540,90 @@ export function WorkspaceFilesSettingsCard(): JSX.Element {
   )
 }
 
+/* ── High-Performance Flattened Visible Row Model ── */
+export interface VisibleFlatRow {
+  readonly id: string
+  readonly name: string
+  readonly path: string
+  readonly isDirectory: boolean
+  readonly depth: number
+  readonly isExpanded: boolean
+  readonly hasChildren: boolean
+  readonly childCount: number
+  readonly size?: number
+  readonly item: FileItem
+}
+
+/**
+ * 线性遍历计算可视行。未展开目录的子节点绝不遍历，彻底解决 DOM 节点爆炸问题。
+ */
+function flattenVisibleTree(
+  items: FileItem[],
+  expandedPaths: Set<string>,
+  depth = 0,
+  out: VisibleFlatRow[] = [],
+): VisibleFlatRow[] {
+  for (const it of items) {
+    const isDir = it.isDirectory
+    const hasChildren = isDir && Array.isArray(it.children) && it.children.length > 0
+    const isExpanded = isDir && expandedPaths.has(it.path)
+    const childCount = hasChildren ? it.children!.length : 0
+
+    out.push({
+      id: it.path,
+      name: it.name,
+      path: it.path,
+      isDirectory: isDir,
+      depth,
+      isExpanded,
+      hasChildren,
+      childCount,
+      size: it.size,
+      item: it,
+    })
+
+    if (isDir && isExpanded && hasChildren) {
+      flattenVisibleTree(it.children!, expandedPaths, depth + 1, out)
+    }
+  }
+  return out
+}
+
+/**
+ * 树形过滤模式：仅保留包含匹配项的分支并保持展开
+ */
+function filterTreeWithAutoExpand(
+  nodes: FileItem[],
+  q: string,
+): { filteredItems: FileItem[]; autoExpandPaths: Set<string> } {
+  const autoExpand = new Set<string>()
+
+  function filterNode(node: FileItem): FileItem | null {
+    const matchSelf = node.name.toLowerCase().includes(q) || node.path.toLowerCase().includes(q)
+    if (node.isDirectory) {
+      const children: FileItem[] = []
+      for (const child of node.children || []) {
+        const c = filterNode(child)
+        if (c) children.push(c)
+      }
+      if (matchSelf || children.length > 0) {
+        autoExpand.add(node.path)
+        return { ...node, children }
+      }
+      return null
+    }
+    return matchSelf ? node : null
+  }
+
+  const result: FileItem[] = []
+  for (const it of nodes) {
+    const f = filterNode(it)
+    if (f) result.push(f)
+  }
+
+  return { filteredItems: result, autoExpandPaths: autoExpand }
+}
+
 /* ── Main Workspace Files View ── */
 function WorkspaceFilesView({
   sessionId,
@@ -559,11 +637,15 @@ function WorkspaceFilesView({
   const [data, setData] = useState<WorkspaceFilesResult | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
-  const [query, setQuery] = useState('')
+  const [inputQuery, setInputQuery] = useState('')
   const [toast, setToast] = useState<string | null>(null)
   const [expandedPaths, setExpandedPaths] = useState<Set<string>>(() => new Set())
   const [activeConfig, setActiveConfig] = useState<WorkspaceFilesConfig>(() => loadWorkspaceFilesConfig())
   const [showHidden, setShowHidden] = useState(() => loadWorkspaceFilesConfig().showHidden)
+  const [searchViewMode, setSearchViewMode] = useState<'flat' | 'tree'>('flat')
+
+  // 使用 React 并发特性分离高频打字与重度树过滤
+  const deferredQuery = useDeferredValue(inputQuery.trim().toLowerCase())
 
   const toastTimer = useRef<number | null>(null)
 
@@ -571,6 +653,10 @@ function WorkspaceFilesView({
     setToast(msg)
     if (toastTimer.current) window.clearTimeout(toastTimer.current)
     toastTimer.current = window.setTimeout(() => setToast(null), 2000)
+  }, [])
+
+  useEffect(() => {
+    ensureFilesStyle()
   }, [])
 
   useEffect(() => {
@@ -597,12 +683,10 @@ function WorkspaceFilesView({
       })
       setData(res)
 
-      // 默认折叠，并从 localStorage 恢复已记录的展开状态
       setExpandedPaths(prev => {
         if (prev.size > 0) return prev
         const stored = loadStoredExpandedPaths(res.root || cwd)
         if (stored !== null) return stored
-        // 默认全部关闭，不展开任何目录
         return new Set<string>()
       })
     } catch (err: any) {
@@ -616,7 +700,7 @@ function WorkspaceFilesView({
     void loadTree()
   }, [loadTree])
 
-  const handleToggleExpand = (path: string) => {
+  const handleToggleExpand = useCallback((path: string) => {
     setExpandedPaths(prev => {
       const next = new Set(prev)
       if (next.has(path)) next.delete(path)
@@ -624,9 +708,9 @@ function WorkspaceFilesView({
       saveStoredExpandedPaths(data?.root || cwd, next)
       return next
     })
-  }
+  }, [data?.root, cwd])
 
-  const handleExpandAll = () => {
+  const handleExpandAll = useCallback(() => {
     if (!data) return
     const all = new Set<string>()
     function collect(items: FileItem[]) {
@@ -640,16 +724,16 @@ function WorkspaceFilesView({
     collect(data.items)
     setExpandedPaths(all)
     saveStoredExpandedPaths(data.root || cwd, all)
-  }
+  }, [data, cwd])
 
-  const handleCollapseAll = () => {
+  const handleCollapseAll = useCallback(() => {
     const empty = new Set<string>()
     setExpandedPaths(empty)
     saveStoredExpandedPaths(data?.root || cwd, empty)
-  }
+  }, [data?.root, cwd])
 
-  // 搜索时点击文件夹：跳回树形视图并展开该目录及全部祖先路径，自动平滑定位
-  const handleJumpToFolderInTree = (dirPath: string) => {
+  // 搜索时点击文件夹：跳回树形视图并展开该目录及全部祖先路径，平滑定位
+  const handleJumpToFolderInTree = useCallback((dirPath: string) => {
     const parts = dirPath.split('/')
     const toExpand: string[] = []
     let acc = ''
@@ -668,11 +752,9 @@ function WorkspaceFilesView({
       return next
     })
 
-    // 退出搜索状态回到树形视图
-    setQuery('')
+    setInputQuery('')
     showToastMsg(`已定位并展开目录: ${dirPath}/`)
 
-    // 平滑滚动定位到该目录节点
     setTimeout(() => {
       try {
         const el = document.querySelector(`[data-tree-path="${dirPath}"]`)
@@ -681,18 +763,16 @@ function WorkspaceFilesView({
         }
       } catch {}
     }, 60)
-  }
+  }, [data?.root, cwd, showToastMsg])
 
-  // 复制相对路径
-  const handleCopyPath = (e: React.MouseEvent, path: string) => {
+  const handleCopyPath = useCallback((e: React.MouseEvent, path: string) => {
     e.stopPropagation()
     void navigator.clipboard.writeText(path).then(() => {
       showToastMsg(`已复制路径: ${path}`)
     })
-  }
+  }, [showToastMsg])
 
-  // 一键 @ 引用到当前对话框输入框（优先插入官方原生交互式 Chip 胶囊）
-  const handleMention = (e: React.MouseEvent, itemOrPath: string | FileItem) => {
+  const handleMention = useCallback((e: React.MouseEvent, itemOrPath: string | FileItem) => {
     e.stopPropagation()
     const itemObj: FileItem = typeof itemOrPath === 'string'
       ? { name: itemOrPath.split('/').pop() || itemOrPath, path: itemOrPath, isDirectory: false }
@@ -700,24 +780,17 @@ function WorkspaceFilesView({
 
     const mentionText = formatMentionText(itemObj.path, itemObj.isDirectory)
 
-    // 1. 优先尝试向会话输入框插入官方原生 ReferenceChipNode 胶囊卡片
     let inserted = false
     try {
       inserted = tryInsertNativeReferenceChip(globalCtx, sessionId, itemObj)
-    } catch (err) {
-      console.warn('[dsh-workspace-files] 原生 Chip 插入失败:', err)
-    }
+    } catch {}
 
-    // 2. 若原生 Chip 插入未成功，无缝降级为规范纯文本插入
     if (!inserted) {
       try {
         inserted = insertMentionToComposer(mentionText)
-      } catch (err) {
-        console.warn('[dsh-workspace-files] 降级纯文本插入失败:', err)
-      }
+      } catch {}
     }
 
-    // 写入剪贴板作为双重保障
     const displayName = itemObj.isDirectory ? `${itemObj.name}/` : itemObj.name
     void navigator.clipboard.writeText(mentionText.trim()).then(() => {
       if (inserted) {
@@ -726,10 +799,9 @@ function WorkspaceFilesView({
         showToastMsg(`已复制引用: ${mentionText.trim()}`)
       }
     })
-  }
+  }, [sessionId, showToastMsg])
 
-  // 在文件资源管理器中定位/打开
-  const handleRevealInExplorer = (e: React.MouseEvent, item: FileItem) => {
+  const handleRevealInExplorer = useCallback((e: React.MouseEvent, item: FileItem) => {
     e.stopPropagation()
     fetch('/dsh-workspace-files/api/files.open', {
       method: 'POST',
@@ -753,10 +825,9 @@ function WorkspaceFilesView({
       .catch(err => {
         showToastMsg(`请求失败: ${err?.message || String(err)}`)
       })
-  }
+  }, [sessionId, cwd, showToastMsg])
 
-  // 用系统默认应用打开
-  const handleOpenDefaultApp = (e: React.MouseEvent, item: FileItem) => {
+  const handleOpenDefaultApp = useCallback((e: React.MouseEvent, item: FileItem) => {
     e.stopPropagation()
     fetch('/dsh-workspace-files/api/files.open', {
       method: 'POST',
@@ -780,88 +851,49 @@ function WorkspaceFilesView({
       .catch(err => {
         showToastMsg(`请求失败: ${err?.message || String(err)}`)
       })
-  }
+  }, [sessionId, cwd, showToastMsg])
 
-  const [searchViewMode, setSearchViewMode] = useState<'flat' | 'tree'>('flat')
-  const [searchExpandedPaths, setSearchExpandedPaths] = useState<Set<string>>(() => new Set())
+  const isSearchActive = Boolean(deferredQuery)
 
-  // 过滤树与扁平结果
-  const { filteredTreeItems, flatSearchResults } = useMemo(() => {
-    if (!data) return { filteredTreeItems: [], flatSearchResults: [] }
-    const q = query.trim().toLowerCase()
-    if (!q) return { filteredTreeItems: data.items, flatSearchResults: [] }
-
-    // 扁平结果列表
-    const flat: Array<{ item: FileItem; parentDir: string }> = []
-    function traverseFlat(items: FileItem[], parentDir: string) {
+  // 1. 扁平搜索结果计算（限定前 150 项，秒速完成）
+  const flatSearchResults = useMemo(() => {
+    if (!data || !isSearchActive) return []
+    const results: Array<{ item: FileItem; parentDir: string }> = []
+    function traverse(items: FileItem[], parentDir: string) {
       for (const it of items) {
-        const match = it.name.toLowerCase().includes(q) || it.path.toLowerCase().includes(q)
-        if (match) {
-          flat.push({ item: it, parentDir })
+        if (it.name.toLowerCase().includes(deferredQuery) || it.path.toLowerCase().includes(deferredQuery)) {
+          results.push({ item: it, parentDir })
+          if (results.length >= 300) return
         }
         if (it.isDirectory && it.children) {
-          traverseFlat(it.children, it.path)
+          traverse(it.children, it.path)
+          if (results.length >= 300) return
         }
       }
     }
-    traverseFlat(data.items, '')
+    traverse(data.items, '')
+    return results
+  }, [data, deferredQuery, isSearchActive])
 
-    // 树形过滤集合
-    function filterNode(node: FileItem): FileItem | null {
-      const selfMatch = node.name.toLowerCase().includes(q) || node.path.toLowerCase().includes(q)
-      if (node.isDirectory) {
-        const filteredChildren: FileItem[] = []
-        for (const child of node.children || []) {
-          const matchedChild = filterNode(child)
-          if (matchedChild) filteredChildren.push(matchedChild)
-        }
-        if (selfMatch || filteredChildren.length > 0) {
-          return { ...node, children: filteredChildren }
-        }
-        return null
-      }
-      return selfMatch ? node : null
+  // 2. 扁平可见行计算（常规树与搜索树），O(N_visible) 极速生成
+  const visibleFlatRows = useMemo(() => {
+    if (!data) return []
+    if (!isSearchActive) {
+      return flattenVisibleTree(data.items, expandedPaths)
     }
 
-    const tree: FileItem[] = []
-    for (const rootNode of data.items) {
-      const matched = filterNode(rootNode)
-      if (matched) tree.push(matched)
-    }
-
-    return { filteredTreeItems: tree, flatSearchResults: flat }
-  }, [data, query])
-
-  // 搜索关键字变化时，自动展开匹配的目录树节点，并允许用户后续自由折叠/展开
-  useEffect(() => {
-    if (!query.trim() || !data) return
-    const q = query.trim().toLowerCase()
-    const autoExpand = new Set<string>()
-    function collect(items: FileItem[]) {
-      for (const it of items) {
-        if (it.isDirectory) {
-          const selfMatch = it.name.toLowerCase().includes(q) || it.path.toLowerCase().includes(q)
-          const childMatch = it.children?.some(c => c.name.toLowerCase().includes(q) || c.path.toLowerCase().includes(q))
-          if (selfMatch || childMatch) autoExpand.add(it.path)
-          if (it.children) collect(it.children)
-        }
-      }
-    }
-    collect(data.items)
-    setSearchExpandedPaths(autoExpand)
-  }, [query, data])
-
-  const isSearchActive = Boolean(query.trim())
+    // 搜索树模式
+    const { filteredItems, autoExpandPaths } = filterTreeWithAutoExpand(data.items, deferredQuery)
+    return flattenVisibleTree(filteredItems, autoExpandPaths)
+  }, [data, isSearchActive, deferredQuery, expandedPaths])
 
   return (
     <div className="dsh-files-root">
-      <GlobalFilesStyle />
-
-      {/* Header */}
+      {/* 1. Header Banner */}
       <header className="dsh-files-header">
         <div className="dsh-files-header-info">
           <div className="dsh-files-title-row">
-            <span className="dsh-files-title">文件</span>
+            <span className="dsh-files-title">工作区文件</span>
             {data && (
               <span className="dsh-files-stats-badge">
                 {data.totalFiles} 文件 · {data.totalDirs} 目录
@@ -874,26 +906,26 @@ function WorkspaceFilesView({
         </div>
       </header>
 
-      {/* Search & Actions Toolbar */}
+      {/* 2. Search Toolbar (Clean Elevated Input + Motion Action Pills) */}
       <div className="dsh-files-toolbar">
         <div className="dsh-files-search-wrap">
           <span className="dsh-files-search-icon"><IconSearch size={13} /></span>
           <input
             type="text"
             className="dsh-files-search-input"
-            placeholder="搜索文件 (支持路径筛选)..."
-            value={query}
-            onChange={e => setQuery(e.target.value)}
+            placeholder="搜索文件或路径 (Esc 清空)..."
+            value={inputQuery}
+            onChange={e => setInputQuery(e.target.value)}
             onKeyDown={e => {
-              if (e.key === 'Escape') setQuery('')
+              if (e.key === 'Escape') setInputQuery('')
             }}
           />
-          {query && (
+          {inputQuery && (
             <button
               type="button"
               className="dsh-files-clear-btn"
-              onClick={() => setQuery('')}
-              title="清除搜索"
+              onClick={() => setInputQuery('')}
+              title="清空搜索"
             >
               <IconClose size={12} />
             </button>
@@ -906,7 +938,7 @@ function WorkspaceFilesView({
               type="button"
               className="dsh-files-tool-btn is-active"
               onClick={() => setSearchViewMode(searchViewMode === 'flat' ? 'tree' : 'flat')}
-              title={searchViewMode === 'flat' ? '当前为扁平列表，点击切换为树形视图' : '当前为树形视图，点击切换为扁平列表'}
+              title={searchViewMode === 'flat' ? '切为树形匹配视图' : '切为扁平列表视图'}
             >
               {searchViewMode === 'flat' ? <IconTree size={13} /> : <IconList size={13} />}
             </button>
@@ -916,7 +948,7 @@ function WorkspaceFilesView({
                 type="button"
                 className="dsh-files-tool-btn"
                 onClick={handleExpandAll}
-                title="全部展开"
+                title="展开全部目录"
               >
                 <IconExpandAll size={13} />
               </button>
@@ -924,7 +956,7 @@ function WorkspaceFilesView({
                 type="button"
                 className="dsh-files-tool-btn"
                 onClick={handleCollapseAll}
-                title="全部折叠"
+                title="折叠全部目录"
               >
                 <IconCollapseAll size={13} />
               </button>
@@ -935,9 +967,9 @@ function WorkspaceFilesView({
             type="button"
             className={`dsh-files-tool-btn ${showHidden ? 'is-active' : ''}`}
             onClick={() => setShowHidden(!showHidden)}
-            title={showHidden ? '隐藏点号开头的文件' : '显示点号开头的文件'}
+            title={showHidden ? '隐藏以点开头的文件' : '显示以点开头的文件'}
           >
-            <span style={{ fontSize: 11, fontWeight: 700 }}>.*</span>
+            <span style={{ fontSize: 10.5, fontWeight: 700 }}>.*</span>
           </button>
           <button
             type="button"
@@ -951,7 +983,7 @@ function WorkspaceFilesView({
         </div>
       </div>
 
-      {/* Error Banner */}
+      {/* Error Alert */}
       {error && (
         <div className="dsh-files-banner-error">
           <span>{error}</span>
@@ -961,24 +993,24 @@ function WorkspaceFilesView({
         </div>
       )}
 
-      {/* Tree / Search Results Content */}
+      {/* 3. High-Performance Virtualized-Ready Content */}
       <div className="dsh-files-body">
         {loading && !data ? (
           <div className="dsh-files-centered">
             <div className="dsh-files-spinner" />
-            <span>加载文件…</span>
+            <span>正在索引工作区文件…</span>
           </div>
         ) : isSearchActive && flatSearchResults.length === 0 ? (
           <div className="dsh-files-empty">
-            <div className="dsh-files-empty-icon"><IconFolder size={26} /></div>
-            <div className="dsh-files-empty-title">未搜索到匹配的文件</div>
-            <div className="dsh-files-empty-detail">请尝试更换搜索关键字，或按 Esc 清除搜索。</div>
+            <div className="dsh-files-empty-icon"><IconFolder size={28} /></div>
+            <div className="dsh-files-empty-title">未匹配到相关文件</div>
+            <div className="dsh-files-empty-detail">请尝试更换关键字或按 Esc 恢复完整目录树。</div>
           </div>
         ) : !isSearchActive && (!data || data.items.length === 0) ? (
           <div className="dsh-files-empty">
-            <div className="dsh-files-empty-icon"><IconFolder size={26} /></div>
+            <div className="dsh-files-empty-icon"><IconFolder size={28} /></div>
             <div className="dsh-files-empty-title">工作区为空</div>
-            <div className="dsh-files-empty-detail">当前工作目录下暂无可显示的文件。</div>
+            <div className="dsh-files-empty-detail">当前工作目录下暂无可展示的文件。</div>
           </div>
         ) : isSearchActive && searchViewMode === 'flat' ? (
           /* ── 扁平搜索结果列表 ── */
@@ -986,13 +1018,13 @@ function WorkspaceFilesView({
             <div className="dsh-files-search-header">
               <span className="dsh-files-search-count">
                 找到 {flatSearchResults.length} 个匹配项
-                {flatSearchResults.length > 150 ? '（展示前 150 项）' : ''}
+                {flatSearchResults.length > 150 ? '（已展示前 150 项）' : ''}
               </span>
               <button
                 type="button"
                 className="dsh-files-view-toggle-btn"
                 onClick={() => setSearchViewMode('tree')}
-                title="切换为可折叠的树形视图"
+                title="切换为树形视图"
               >
                 <IconTree size={12} />
                 <span>切为树形</span>
@@ -1010,7 +1042,7 @@ function WorkspaceFilesView({
                       onOpenFile(item.path)
                     }
                   }}
-                  title={item.isDirectory ? `点击退出搜索并定位展开目录: ${item.path}/` : `点击预览打开文件: ${item.path}`}
+                  title={item.isDirectory ? `点击定位并展开目录: ${item.path}/` : `点击预览打开: ${item.path}`}
                 >
                   <span className="dsh-files-flat-icon">
                     {item.isDirectory ? <IconFolder size={14} /> : <FileGlyphIcon filename={item.name} size={14} />}
@@ -1018,7 +1050,7 @@ function WorkspaceFilesView({
                   <div className="dsh-files-flat-info">
                     <div className="dsh-files-flat-top">
                       <span className="dsh-files-flat-name">
-                        <HighlightText text={item.name} query={query} />
+                        <HighlightText text={item.name} query={deferredQuery} />
                         {item.isDirectory && '/'}
                       </span>
                       {item.size !== undefined && (
@@ -1039,16 +1071,16 @@ function WorkspaceFilesView({
                       type="button"
                       className="dsh-files-action-btn dsh-files-action-at"
                       onClick={e => handleMention(e, item)}
-                      title={`一键 @ 引用此${item.isDirectory ? '目录' : '文件'}到当前会话`}
+                      title={`@ 引用${item.isDirectory ? '目录' : '文件'}到会话`}
                     >
-                      <IconAt size={13} />
+                      <IconAt size={12} />
                       <span className="dsh-files-action-at-text">@引用</span>
                     </button>
                     <button
                       type="button"
                       className="dsh-files-action-btn"
                       onClick={e => handleRevealInExplorer(e, item)}
-                      title={`在文件资源管理器中显示此${item.isDirectory ? '目录' : '文件'}`}
+                      title="在文件资源管理器中显示"
                     >
                       <IconExplorer size={12} />
                     </button>
@@ -1056,7 +1088,7 @@ function WorkspaceFilesView({
                       type="button"
                       className="dsh-files-action-btn"
                       onClick={e => handleOpenDefaultApp(e, item)}
-                      title={`用系统默认应用打开此${item.isDirectory ? '目录' : '文件'}`}
+                      title="用系统默认应用打开"
                     >
                       <IconExternalApp size={12} />
                     </button>
@@ -1071,19 +1103,14 @@ function WorkspaceFilesView({
                   </div>
                 </div>
               ))}
-              {flatSearchResults.length > 150 && (
-                <div style={{ padding: '10px 14px', fontSize: 11, textAlign: 'center', color: 'var(--dsw-alias-label-tertiary, #8b93a1)', borderTop: '1px dashed var(--dsw-alias-border-l2, #e5e7eb)' }}>
-                  匹配项较多，已限制展示前 150 项以保证流畅度，请输入更详细关键字
-                </div>
-              )}
             </div>
           </div>
         ) : (
-          /* ── 树形视图（普通模式或搜索树模式） ── */
+          /* ── 扁平单层映射可视树（高帧率 0 递归开销） ── */
           <div className="dsh-files-tree">
             {isSearchActive && (
               <div className="dsh-files-search-header">
-                <span className="dsh-files-search-count">树形匹配（自由折叠/展开）</span>
+                <span className="dsh-files-search-count">树形匹配（共 {visibleFlatRows.length} 项）</span>
                 <button
                   type="button"
                   className="dsh-files-view-toggle-btn"
@@ -1095,38 +1122,24 @@ function WorkspaceFilesView({
                 </button>
               </div>
             )}
-            {filteredTreeItems.map(item => (
-              <FileTreeNode
-                key={item.path}
-                item={item}
-                depth={0}
-                query={query}
-                isSearchMode={isSearchActive}
-                expandedPaths={isSearchActive ? searchExpandedPaths : expandedPaths}
-                onToggleExpand={(path: string) => {
-                  if (isSearchActive) {
-                    setSearchExpandedPaths(prev => {
-                      const next = new Set(prev)
-                      if (next.has(path)) next.delete(path)
-                      else next.add(path)
-                      return next
-                    })
-                  } else {
-                    handleToggleExpand(path)
-                  }
-                }}
+            {visibleFlatRows.map(row => (
+              <FileTreeRow
+                key={row.id}
+                row={row}
+                query={deferredQuery}
+                onToggleExpand={handleToggleExpand}
                 onOpenFile={onOpenFile}
                 onMention={handleMention}
-                onCopyPath={handleCopyPath}
                 onRevealInExplorer={handleRevealInExplorer}
                 onOpenDefaultApp={handleOpenDefaultApp}
+                onCopyPath={handleCopyPath}
               />
             ))}
           </div>
         )}
       </div>
 
-      {/* Toast Notification */}
+      {/* Floating Animated Toast */}
       {toast && (
         <div className="dsh-files-toast">
           <IconCheck size={12} />
@@ -1137,165 +1150,141 @@ function WorkspaceFilesView({
   )
 }
 
-/* ── Tree Node Component ── */
-function FileTreeNode(props: {
-  item: FileItem
-  depth: number
+/* ── Memoized Flat Tree Row Component ── */
+interface FileTreeRowProps {
+  row: VisibleFlatRow
   query: string
-  isSearchMode: boolean
-  expandedPaths: Set<string>
   onToggleExpand: (path: string) => void
   onOpenFile: (path: string) => void
   onMention: (e: React.MouseEvent, item: FileItem) => void
-  onCopyPath: (e: React.MouseEvent, path: string) => void
   onRevealInExplorer: (e: React.MouseEvent, item: FileItem) => void
   onOpenDefaultApp: (e: React.MouseEvent, item: FileItem) => void
-}): JSX.Element {
+  onCopyPath: (e: React.MouseEvent, path: string) => void
+}
+
+const FileTreeRow = memo(function FileTreeRow(props: FileTreeRowProps): JSX.Element {
   const {
-    item,
-    depth,
+    row,
     query,
-    isSearchMode,
-    expandedPaths,
     onToggleExpand,
     onOpenFile,
     onMention,
-    onCopyPath,
     onRevealInExplorer,
     onOpenDefaultApp,
+    onCopyPath,
   } = props
-  const isExpanded = expandedPaths.has(item.path)
 
-  if (item.isDirectory) {
-    const childCount = item.children?.length ?? 0
+  const indentPx = row.depth * 14 + 8
+
+  if (row.isDirectory) {
     return (
-      <div className="dsh-files-dir-block">
-        <div
-          className="dsh-files-dir-row"
-          data-tree-path={item.path}
-          style={{ paddingLeft: `${depth * 14 + 10}px` }}
-          onClick={() => onToggleExpand(item.path)}
-        >
-          <span className="dsh-files-chevron" data-collapsed={!isExpanded ? 'true' : undefined}>▾</span>
-          <span className="dsh-files-folder-icon">
-            <IconFolder size={14} open={isExpanded} />
-          </span>
-          <span className="dsh-files-folder-name" title={item.path}>
-            <HighlightText text={item.name} query={query} />
-          </span>
-          <span className="dsh-files-count-badge">{childCount}</span>
+      <div
+        className="dsh-files-dir-row"
+        data-tree-path={row.path}
+        style={{ paddingLeft: `${indentPx}px` }}
+        onClick={() => onToggleExpand(row.path)}
+      >
+        <span className={`dsh-files-chevron-wrap ${row.isExpanded ? 'is-expanded' : ''}`}>
+          <IconChevronRight size={11} />
+        </span>
+        <span className="dsh-files-folder-icon">
+          <IconFolder size={14} open={row.isExpanded} />
+        </span>
+        <span className="dsh-files-folder-name" title={row.path}>
+          <HighlightText text={row.name} query={query} />
+        </span>
+        <span className="dsh-files-count-badge">{row.childCount}</span>
 
-          <div className="dsh-files-row-actions">
-            <button
-              type="button"
-              className="dsh-files-action-btn dsh-files-action-at"
-              onClick={e => onMention(e, item)}
-              title="一键 @ 引用此目录到当前会话"
-            >
-              <IconAt size={13} />
-              <span className="dsh-files-action-at-text">@引用</span>
-            </button>
-            <button
-              type="button"
-              className="dsh-files-action-btn"
-              onClick={e => onRevealInExplorer(e, item)}
-              title="在文件资源管理器中打开此目录"
-            >
-              <IconExplorer size={12} />
-            </button>
-            <button
-              type="button"
-              className="dsh-files-action-btn"
-              onClick={e => onOpenDefaultApp(e, item)}
-              title="用系统默认应用打开此目录"
-            >
-              <IconExternalApp size={12} />
-            </button>
-            <button
-              type="button"
-              className="dsh-files-action-btn"
-              onClick={e => onCopyPath(e, item.path)}
-              title="复制目录路径"
-            >
-              <IconCopy size={12} />
-            </button>
-          </div>
+        <div className="dsh-files-row-actions">
+          <button
+            type="button"
+            className="dsh-files-action-btn dsh-files-action-at"
+            onClick={e => onMention(e, row.item)}
+            title="一键 @ 引用此目录到会话"
+          >
+            <IconAt size={12} />
+            <span className="dsh-files-action-at-text">@引用</span>
+          </button>
+          <button
+            type="button"
+            className="dsh-files-action-btn"
+            onClick={e => onRevealInExplorer(e, row.item)}
+            title="在文件资源管理器中打开此目录"
+          >
+            <IconExplorer size={12} />
+          </button>
+          <button
+            type="button"
+            className="dsh-files-action-btn"
+            onClick={e => onOpenDefaultApp(e, row.item)}
+            title="用系统默认应用打开此目录"
+          >
+            <IconExternalApp size={12} />
+          </button>
+          <button
+            type="button"
+            className="dsh-files-action-btn"
+            onClick={e => onCopyPath(e, row.path)}
+            title="复制目录路径"
+          >
+            <IconCopy size={12} />
+          </button>
         </div>
-        {isExpanded && item.children && (
-          <div className="dsh-files-children">
-            {item.children.map(child => (
-              <FileTreeNode
-                key={child.path}
-                item={child}
-                depth={depth + 1}
-                query={query}
-                isSearchMode={isSearchMode}
-                expandedPaths={expandedPaths}
-                onToggleExpand={onToggleExpand}
-                onOpenFile={onOpenFile}
-                onMention={onMention}
-                onCopyPath={onCopyPath}
-                onRevealInExplorer={onRevealInExplorer}
-                onOpenDefaultApp={onOpenDefaultApp}
-              />
-            ))}
-          </div>
-        )}
       </div>
     )
   }
 
-  // File item row
   return (
     <div
       className="dsh-files-row"
-      data-tree-path={item.path}
-      style={{ paddingLeft: `${depth * 14 + 10}px` }}
-      onClick={() => onOpenFile(item.path)}
-      title={`点击打开: ${item.path}`}
+      data-tree-path={row.path}
+      style={{ paddingLeft: `${indentPx}px` }}
+      onClick={() => onOpenFile(row.path)}
+      title={`点击打开文件: ${row.path}`}
     >
-      <FileGlyphIcon filename={item.name} size={14} />
+      <span className="dsh-files-file-glyph">
+        <FileGlyphIcon filename={row.name} size={14} />
+      </span>
       <span className="dsh-files-name">
-        <HighlightText text={item.name} query={query} />
+        <HighlightText text={row.name} query={query} />
       </span>
 
-      {item.size !== undefined && (
-        <span className="dsh-files-size" title={`大小: ${item.size} 字节`}>
-          {formatFileSize(item.size)}
+      {row.size !== undefined && (
+        <span className="dsh-files-size" title={`大小: ${row.size} 字节`}>
+          {formatFileSize(row.size)}
         </span>
       )}
 
-      {/* Row Hover Actions */}
       <div className="dsh-files-row-actions">
         <button
           type="button"
           className="dsh-files-action-btn dsh-files-action-at"
-          onClick={e => onMention(e, item)}
-          title="一键 @ 引用此文件到当前会话"
+          onClick={e => onMention(e, row.item)}
+          title="一键 @ 引用此文件到会话"
         >
-          <IconAt size={13} />
+          <IconAt size={12} />
           <span className="dsh-files-action-at-text">@引用</span>
         </button>
         <button
           type="button"
           className="dsh-files-action-btn"
-          onClick={e => onRevealInExplorer(e, item)}
-          title="在文件资源管理器中显示此文件"
+          onClick={e => onRevealInExplorer(e, row.item)}
+          title="在文件资源管理器中定位"
         >
           <IconExplorer size={12} />
         </button>
         <button
           type="button"
           className="dsh-files-action-btn"
-          onClick={e => onOpenDefaultApp(e, item)}
-          title="用系统默认应用打开此文件"
+          onClick={e => onOpenDefaultApp(e, row.item)}
+          title="用系统默认应用打开"
         >
           <IconExternalApp size={12} />
         </button>
         <button
           type="button"
           className="dsh-files-action-btn"
-          onClick={e => onCopyPath(e, item.path)}
+          onClick={e => onCopyPath(e, row.path)}
           title="复制相对路径"
         >
           <IconCopy size={12} />
@@ -1303,18 +1292,25 @@ function FileTreeNode(props: {
       </div>
     </div>
   )
-}
+}, (prev, next) => {
+  return (
+    prev.row.id === next.row.id &&
+    prev.row.isExpanded === next.row.isExpanded &&
+    prev.row.depth === next.row.depth &&
+    prev.row.childCount === next.row.childCount &&
+    prev.query === next.query
+  )
+})
 
 /* ── Helpers ── */
 function HighlightText({ text, query }: { text: string; query: string }): JSX.Element {
-  const q = query.trim().toLowerCase()
-  if (!q) return <span>{text}</span>
-  const index = text.toLowerCase().indexOf(q)
+  if (!query) return <span>{text}</span>
+  const index = text.toLowerCase().indexOf(query)
   if (index === -1) return <span>{text}</span>
 
   const before = text.slice(0, index)
-  const match = text.slice(index, index + q.length)
-  const after = text.slice(index + q.length)
+  const match = text.slice(index, index + query.length)
+  const after = text.slice(index + query.length)
 
   return (
     <span>
@@ -1333,12 +1329,6 @@ function formatFileSize(bytes: number): string {
   return `${mb.toFixed(1)} MB`
 }
 
-/**
- * 按照 DSH 官方规范格式化引用路径：
- * - 纯路径无空格：@path
- * - 路径含空格：@"path"
- * - 目录末尾保留斜杠：@folder/ 或 @"folder/"
- */
 function formatMentionText(path: string, isDirectory = false): string {
   const cleanPath = path.replace(/\\/g, '/').replace(/^\.?\//, '')
   const finalPath = isDirectory ? (cleanPath.endsWith('/') ? cleanPath : `${cleanPath}/`) : cleanPath
@@ -1371,11 +1361,7 @@ function saveStoredExpandedPaths(workspaceRoot: string | undefined, paths: Set<s
   } catch {}
 }
 
-/**
- * 从当前 DOM 的 React Fiber 树或 Cordis RootContext 中提取当前活跃输入框的 SessionInputShell 实例
- */
 function findComposerShell(ctx: Context | null, sessionId?: string): any {
-  // 1. 优先从 DOM 的 React Fiber 提取（直接命中当前活跃输入框的组件 props）
   try {
     const composerDom = document.querySelector<HTMLElement>(
       '[data-composer-input="true"], [data-composer-input], [data-composer-card], div[role="textbox"][contenteditable="true"]'
@@ -1400,11 +1386,8 @@ function findComposerShell(ctx: Context | null, sessionId?: string): any {
         }
       }
     }
-  } catch (e) {
-    console.debug('[dsh-workspace-files] 从 Fiber 查找 keyboard 失败:', e)
-  }
+  } catch {}
 
-  // 2. 从 Cordis RootContext 查找
   if (ctx) {
     try {
       const root: any = (ctx as any).root || ctx
@@ -1420,30 +1403,22 @@ function findComposerShell(ctx: Context | null, sessionId?: string): any {
           return values[values.length - 1]
         }
       }
-    } catch (e) {
-      console.debug('[dsh-workspace-files] 从 RootContext 查找 shell 失败:', e)
-    }
+    } catch {}
   }
 
   return null
 }
 
-/**
- * 尝试向会话输入框插入原生的 ReferenceChipNode（官方胶囊 Tag 卡片）
- */
 function tryInsertNativeReferenceChip(ctx: Context | null, sessionId: string | undefined, item: FileItem): boolean {
   if (typeof document === 'undefined') return false
   try {
-    // 聚焦输入框
     const composerDom = document.querySelector<HTMLElement>(
       '[data-composer-input="true"], [data-composer-input], [data-composer-card] [contenteditable="true"], div[role="textbox"][contenteditable="true"]'
     )
     if (composerDom) composerDom.focus()
 
     const shell = findComposerShell(ctx, sessionId)
-    if (!shell) {
-      return false
-    }
+    if (!shell) return false
 
     const cleanPath = item.path.replace(/\\/g, '/').replace(/^\.?\//, '')
     const mention = item.isDirectory ? (cleanPath.endsWith('/') ? `@${cleanPath}` : `@${cleanPath}/`) : `@${cleanPath}`
@@ -1462,7 +1437,6 @@ function tryInsertNativeReferenceChip(ctx: Context | null, sessionId: string | u
     let start = caret
     const end = caret
 
-    // 智能消除：若当前光标前是 '@'，回退一个字符将其吃掉替换
     if (start > 0 && text[start - 1] === '@') {
       start = start - 1
     }
@@ -1473,33 +1447,23 @@ function tryInsertNativeReferenceChip(ctx: Context | null, sessionId: string | u
       end,
     }
 
-    // 优先调用原生 shell.insertReference 插入 Chip Tag
     if (typeof shell.insertReference === 'function') {
       const ok = shell.insertReference(reference, span)
       if (ok) return true
     }
 
-    // 备用：尝试通过 session actx 派发事件
     const actx = shell.deps?.actx
     if (actx && typeof actx.bail === 'function') {
       const ok = actx.bail(actx, 'slash/input-insert-reference', { reference, span })
       if (ok === true) return true
     }
-  } catch (err) {
-    console.debug('[dsh-workspace-files] 插入原生 Chip 异常:', err)
-  }
+  } catch {}
   return false
 }
 
-/**
- * 将引用文本注入到 DSH 当前会话的主输入框。
- * 兼容 DSH 官方基于 Lexical 的 ComposerContentEditable (div[data-composer-input])
- * 以及传统的 textarea / input，并自动消除用户手动输入的冗余 '@'。
- */
 function insertMentionToComposer(mentionText: string): boolean {
   if (typeof document === 'undefined') return false
 
-  // 1. 查找 DSH 官方输入框（Lexical contenteditable 容器优先）
   const candidates = [
     document.querySelector<HTMLElement>('[data-composer-input="true"]'),
     document.querySelector<HTMLElement>('[data-composer-input]'),
@@ -1513,7 +1477,6 @@ function insertMentionToComposer(mentionText: string): boolean {
 
   target.focus()
 
-  // 策略 A: contenteditable (DSH 官方 Lexical 编辑器)
   if (target.getAttribute('contenteditable') === 'true' || target.isContentEditable) {
     const sel = window.getSelection()
     if (sel) {
@@ -1527,11 +1490,10 @@ function insertMentionToComposer(mentionText: string): boolean {
       if (!isInTarget) {
         const range = document.createRange()
         range.selectNodeContents(target)
-        range.collapse(false) // 光标定位到文本最末尾
+        range.collapse(false)
         sel.removeAllRanges()
         sel.addRange(range)
       } else {
-        // 智能消除：若光标前一个字符是已键入的 '@'，将其纳入选区进行覆盖替换，避免出现 '@@file'
         const range = sel.getRangeAt(0)
         if (range.collapsed && range.startContainer.nodeType === Node.TEXT_NODE) {
           const nodeText = range.startContainer.textContent || ''
@@ -1545,7 +1507,6 @@ function insertMentionToComposer(mentionText: string): boolean {
       }
     }
 
-    // 原生 execCommand('insertText') 会直接触发 Lexical 的 input/beforeinput 事件流并更新 React 状态
     let success = false
     try {
       success = document.execCommand('insertText', false, mentionText)
@@ -1567,13 +1528,11 @@ function insertMentionToComposer(mentionText: string): boolean {
     return success
   }
 
-  // 策略 B: 普通 textarea / input
   if (target instanceof HTMLTextAreaElement || target instanceof HTMLInputElement) {
     let start = target.selectionStart ?? target.value.length
     const end = target.selectionEnd ?? target.value.length
     const prev = target.value
 
-    // 智能消除：若前面紧随 '@'，覆盖它
     if (start > 0 && prev[start - 1] === '@') {
       start = start - 1
     }
@@ -1637,18 +1596,23 @@ async function call<T = any>(method: string, payload: Record<string, unknown> = 
   return envelope.value
 }
 
-/* ── CSS Styles ── */
-function GlobalFilesStyle(): JSX.Element {
-  return (
-    <style>{`
+/* ── Singleton Dynamic CSS Injection (Zero React re-evaluation) ── */
+function ensureFilesStyle() {
+  if (typeof document === 'undefined') return
+  const id = 'dsh-workspace-files-core-style'
+  if (document.getElementById(id)) return
+
+  const style = document.createElement('style')
+  style.id = id
+  style.textContent = `
 .dsh-files-root {
   display: flex;
   flex-direction: column;
   height: 100%;
   min-height: 0;
   box-sizing: border-box;
-  background: var(--dsw-alias-bg-base, #ffffff);
-  color: var(--dsw-alias-label-primary, #17233c);
+  background: var(--dsw-alias-fill-base, #ffffff);
+  color: var(--dsw-alias-label-primary);
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
   font-size: 12px;
   line-height: 1.4;
@@ -1664,7 +1628,8 @@ function GlobalFilesStyle(): JSX.Element {
   justify-content: space-between;
   gap: 8px;
   padding: 8px 12px;
-  border-bottom: 1px solid var(--dsw-alias-border-l1, rgba(118,137,166,.18));
+  border-bottom: 0.5px solid var(--dsw-alias-border-l1);
+  background: var(--dsw-alias-fill-base, #ffffff);
 }
 .dsh-files-header-info {
   flex: 1;
@@ -1678,33 +1643,34 @@ function GlobalFilesStyle(): JSX.Element {
 .dsh-files-title {
   font-weight: 600;
   font-size: 13px;
-  color: var(--dsw-alias-label-primary, inherit);
+  color: var(--dsw-alias-label-primary);
 }
 .dsh-files-stats-badge {
   font-size: 10px;
   font-weight: 500;
-  color: var(--dsw-alias-label-tertiary, #8c9ba5);
-  background: var(--dsw-alias-interactive-bg-hover, rgba(100,120,150,.1));
-  padding: 1px 6px;
+  color: var(--dsw-alias-label-tertiary);
+  background: color-mix(in srgb, var(--dsw-alias-label-primary) 6%, transparent);
+  padding: 1px 7px;
   border-radius: 99px;
 }
 .dsh-files-root-path {
   font-size: 11px;
-  color: var(--dsw-alias-label-tertiary, #8c9ba5);
+  color: var(--dsw-alias-label-tertiary);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  margin-top: 1px;
+  margin-top: 2px;
 }
 
-/* ── Toolbar & Search ── */
+/* ── Toolbar & Pure White Input ── */
 .dsh-files-toolbar {
   display: flex;
   align-items: center;
   gap: 6px;
-  padding: 6px 8px 6px 12px;
-  border-bottom: 1px solid var(--dsw-alias-border-l1, rgba(118,137,166,.15));
-  background: var(--dsw-alias-bg-base, #ffffff);
+  padding: 6px 10px;
+  border-bottom: 0.5px solid var(--dsw-alias-border-l2);
+  background: var(--dsw-alias-fill-base, #ffffff);
+  flex-shrink: 0;
 }
 .dsh-files-search-wrap {
   position: relative;
@@ -1715,70 +1681,77 @@ function GlobalFilesStyle(): JSX.Element {
 }
 .dsh-files-search-icon {
   position: absolute;
-  left: 7px;
-  color: var(--dsw-alias-label-tertiary, #8c9ba5);
+  left: 8px;
+  color: var(--dsw-alias-label-tertiary);
   pointer-events: none;
   display: flex;
 }
 .dsh-files-search-input {
   box-sizing: border-box;
   width: 100%;
-  height: 25px;
-  padding: 0 22px 0 26px;
-  border: 1px solid var(--dsw-alias-border-l2, rgba(118,137,166,.25));
-  border-radius: 4px;
-  background: var(--dsw-alias-interactive-bg-hover, rgba(100,120,150,.06));
-  color: inherit;
-  font-size: 11.5px;
+  height: 28px;
+  padding: 0 24px 0 28px;
+  border: 0.5px solid var(--dsw-alias-border-l1);
+  border-radius: var(--dsw-radius-sm, 6px);
+  background: var(--dsw-alias-fill-base, #ffffff);
+  color: var(--dsw-alias-label-primary);
+  font-size: 11px;
   outline: none;
-  transition: all 0.15s ease;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease, background 0.15s ease;
 }
 .dsh-files-search-input:focus {
-  background: var(--dsw-alias-bg-base, #ffffff);
-  border-color: var(--dsw-alias-brand-primary, #4b70e2);
-  box-shadow: 0 0 0 2px color-mix(in srgb, var(--dsw-alias-brand-primary, #4b70e2) 15%, transparent);
+  border-color: var(--dsw-alias-state-business-primary);
+  background: var(--dsw-alias-fill-base, #ffffff);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--dsw-alias-state-business-primary) 18%, transparent);
 }
 .dsh-files-clear-btn {
   position: absolute;
-  right: 5px;
+  right: 6px;
   border: none;
   background: transparent;
-  color: var(--dsw-alias-label-tertiary, #8c9ba5);
+  color: var(--dsw-alias-label-tertiary);
   cursor: pointer;
   padding: 2px;
   display: flex;
+  border-radius: 50%;
+  transition: all 0.12s ease;
 }
 .dsh-files-clear-btn:hover {
-  color: var(--dsw-alias-label-primary, inherit);
+  color: var(--dsw-alias-label-primary);
+  background: var(--dsw-alias-interactive-bg-hover);
 }
 .dsh-files-toolbar-btns {
   display: flex;
   align-items: center;
   gap: 2px;
+  flex-shrink: 0;
 }
 .dsh-files-tool-btn {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 24px;
-  height: 24px;
+  width: 26px;
+  height: 26px;
   border: none;
-  border-radius: 4px;
+  border-radius: var(--dsw-radius-xs, 4px);
   background: transparent;
-  color: var(--dsw-alias-label-secondary, #6f7f9b);
+  color: var(--dsw-alias-label-secondary);
   cursor: pointer;
-  transition: all 0.12s ease;
+  transition: all 0.15s cubic-bezier(0.16, 1, 0.3, 1);
 }
 .dsh-files-tool-btn:hover:not(:disabled) {
-  color: var(--dsw-alias-label-primary, inherit);
-  background: var(--dsw-alias-interactive-bg-hover, rgba(100,120,150,.1));
+  color: var(--dsw-alias-label-primary);
+  background: var(--dsw-alias-interactive-bg-hover);
+}
+.dsh-files-tool-btn:active:not(:disabled) {
+  transform: scale(0.94);
 }
 .dsh-files-tool-btn.is-active {
-  color: var(--dsw-alias-brand-primary, #4b70e2);
-  background: var(--dsw-alias-interactive-bg-active, rgba(75,112,226,.15));
+  color: var(--dsw-alias-state-business-primary);
+  background: color-mix(in srgb, var(--dsw-alias-state-business-primary) 14%, transparent);
 }
 .dsh-files-tool-btn:disabled {
-  opacity: 0.4;
+  opacity: 0.35;
   cursor: not-allowed;
 }
 
@@ -1790,10 +1763,8 @@ function GlobalFilesStyle(): JSX.Element {
   overflow-x: hidden;
   padding: 4px 0;
 }
-.dsh-files-dir-block {
-  display: flex;
-  flex-direction: column;
-}
+
+/* ── Directory Row (with Motion Chevron) ── */
 .dsh-files-dir-row {
   display: flex;
   align-items: center;
@@ -1803,29 +1774,35 @@ function GlobalFilesStyle(): JSX.Element {
   cursor: pointer;
   user-select: none;
   position: relative;
-  color: var(--dsw-alias-label-secondary, #6f7f9b);
+  color: var(--dsw-alias-label-primary);
+  border-radius: var(--dsw-radius-xs, 4px);
+  margin: 0 4px;
   transition: background 0.12s ease;
 }
 .dsh-files-dir-row:hover {
-  background: var(--dsw-alias-interactive-bg-hover, rgba(100,120,150,.08));
-  color: var(--dsw-alias-label-primary, inherit);
+  background: var(--dsw-alias-interactive-bg-hover);
 }
-.dsh-files-chevron {
-  font-size: 10px;
-  transition: transform 0.15s ease;
-  display: inline-block;
-  opacity: 0.8;
+.dsh-files-chevron-wrap {
+  width: 12px;
+  height: 12px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--dsw-alias-label-tertiary);
+  transition: transform 0.18s cubic-bezier(0.16, 1, 0.3, 1);
+  flex-shrink: 0;
 }
-.dsh-files-chevron[data-collapsed='true'] {
-  transform: rotate(-90deg);
+.dsh-files-chevron-wrap.is-expanded {
+  transform: rotate(90deg);
 }
 .dsh-files-folder-icon {
   display: flex;
+  flex-shrink: 0;
 }
 .dsh-files-folder-name {
   flex: 1;
   min-width: 0;
-  font-weight: 500;
+  font-weight: 550;
   font-size: 12px;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -1836,8 +1813,8 @@ function GlobalFilesStyle(): JSX.Element {
   font-weight: 600;
   padding: 0 5px;
   border-radius: 99px;
-  background: var(--dsw-alias-interactive-bg-hover, rgba(100,120,150,.1));
-  color: var(--dsw-alias-label-tertiary, #8c9ba5);
+  background: color-mix(in srgb, var(--dsw-alias-label-primary) 6%, transparent);
+  color: var(--dsw-alias-label-tertiary);
 }
 
 /* ── File Row ── */
@@ -1850,43 +1827,94 @@ function GlobalFilesStyle(): JSX.Element {
   cursor: pointer;
   user-select: none;
   position: relative;
+  border-radius: var(--dsw-radius-xs, 4px);
+  margin: 0 4px;
   transition: background 0.12s ease;
 }
 .dsh-files-row:hover {
-  background: var(--dsw-alias-interactive-bg-hover, rgba(100,120,150,.08));
+  background: var(--dsw-alias-interactive-bg-hover);
+}
+.dsh-files-file-glyph {
+  margin-left: 12px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
 }
 .dsh-files-name {
   flex: 1;
   min-width: 0;
   font-size: 12px;
-  color: var(--dsw-alias-label-primary, inherit);
+  color: var(--dsw-alias-label-primary);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 .dsh-files-size {
   font-size: 10px;
-  color: var(--dsw-alias-label-tertiary, #8c9ba5);
+  color: var(--dsw-alias-label-tertiary);
   flex-shrink: 0;
   margin-right: 4px;
 }
 
-/* ── Hover Actions on Rows ── */
+/* ── Micro-Interaction Hover Action Pills ── */
 .dsh-files-row-actions {
-  display: none;
+  display: flex;
   align-items: center;
-  gap: 3px;
+  gap: 2px;
   flex-shrink: 0;
+  opacity: 0;
+  transform: translateX(4px);
+  pointer-events: none;
+  transition: opacity 0.15s cubic-bezier(0.16, 1, 0.3, 1), transform 0.15s cubic-bezier(0.16, 1, 0.3, 1);
+  margin-left: auto;
 }
 .dsh-files-row:hover .dsh-files-row-actions,
 .dsh-files-dir-row:hover .dsh-files-row-actions,
 .dsh-files-flat-row:hover .dsh-files-row-actions {
-  display: flex;
+  opacity: 1;
+  transform: translateX(0);
+  pointer-events: auto;
 }
 .dsh-files-row:hover .dsh-files-size,
 .dsh-files-dir-row:hover .dsh-files-count-badge,
 .dsh-files-flat-row:hover .dsh-files-size {
   display: none;
+}
+.dsh-files-action-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+  height: 20px;
+  padding: 0 5px;
+  border: 0.5px solid var(--dsw-alias-border-l1);
+  border-radius: var(--dsw-radius-xs, 3px);
+  background: var(--dsw-alias-fill-base, #ffffff);
+  color: var(--dsw-alias-label-secondary);
+  cursor: pointer;
+  transition: all 0.12s cubic-bezier(0.16, 1, 0.3, 1);
+}
+.dsh-files-action-btn:hover {
+  color: var(--dsw-alias-label-primary);
+  border-color: var(--dsw-alias-state-business-primary);
+  background: var(--dsw-alias-interactive-bg-hover);
+}
+.dsh-files-action-btn:active {
+  transform: scale(0.92);
+}
+.dsh-files-action-at {
+  color: var(--dsw-alias-state-business-primary);
+  border-color: color-mix(in srgb, var(--dsw-alias-state-business-primary) 35%, transparent);
+  background: color-mix(in srgb, var(--dsw-alias-state-business-primary) 8%, transparent);
+}
+.dsh-files-action-at:hover {
+  color: var(--dsw-alias-label-primary-inverted, #ffffff);
+  background: var(--dsw-alias-state-business-primary);
+  border-color: var(--dsw-alias-state-business-primary);
+}
+.dsh-files-action-at-text {
+  font-size: 10px;
+  font-weight: 600;
 }
 
 /* ── Flat Search Result List ── */
@@ -1900,9 +1928,9 @@ function GlobalFilesStyle(): JSX.Element {
   justify-content: space-between;
   padding: 6px 12px;
   font-size: 11px;
-  color: var(--dsw-alias-label-tertiary, #8c9ba5);
-  background: color-mix(in srgb, var(--dsw-alias-brand-primary, #4b70e2) 4%, transparent);
-  border-bottom: 1px solid var(--dsw-alias-border-l1, rgba(118,137,166,.15));
+  color: var(--dsw-alias-label-tertiary);
+  background: color-mix(in srgb, var(--dsw-alias-state-business-primary) 4%, transparent);
+  border-bottom: 0.5px solid var(--dsw-alias-border-l2);
 }
 .dsh-files-search-count {
   font-weight: 500;
@@ -1911,20 +1939,20 @@ function GlobalFilesStyle(): JSX.Element {
   display: inline-flex;
   align-items: center;
   gap: 4px;
-  border: 1px solid var(--dsw-alias-border-l2, rgba(118,137,166,.25));
-  background: var(--dsw-alias-container-bg, var(--dsw-alias-bg-base, #ffffff));
-  color: var(--dsw-alias-brand-primary, #4b70e2);
+  border: 0.5px solid var(--dsw-alias-border-l1);
+  background: var(--dsw-alias-fill-base, #ffffff);
+  color: var(--dsw-alias-state-business-primary);
   cursor: pointer;
   font-size: 10.5px;
   font-weight: 500;
   padding: 2px 7px;
-  border-radius: 4px;
-  transition: all 0.12s ease;
+  border-radius: var(--dsw-radius-xs, 4px);
+  transition: all 0.12s cubic-bezier(0.16, 1, 0.3, 1);
 }
 .dsh-files-view-toggle-btn:hover {
-  background: var(--dsw-alias-brand-primary, #4b70e2);
-  color: #ffffff;
-  border-color: var(--dsw-alias-brand-primary, #4b70e2);
+  background: var(--dsw-alias-state-business-primary);
+  color: var(--dsw-alias-label-primary-inverted, #ffffff);
+  border-color: var(--dsw-alias-state-business-primary);
 }
 .dsh-files-flat-list {
   padding: 4px 0;
@@ -1933,7 +1961,7 @@ function GlobalFilesStyle(): JSX.Element {
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 4px 12px;
+  padding: 5px 12px;
   cursor: pointer;
   user-select: none;
   position: relative;
@@ -1941,7 +1969,7 @@ function GlobalFilesStyle(): JSX.Element {
   min-height: 32px;
 }
 .dsh-files-flat-row:hover {
-  background: var(--dsw-alias-interactive-bg-hover, rgba(100,120,150,.08));
+  background: var(--dsw-alias-interactive-bg-hover);
 }
 .dsh-files-flat-icon {
   display: flex;
@@ -1965,22 +1993,21 @@ function GlobalFilesStyle(): JSX.Element {
 .dsh-files-flat-name {
   font-size: 12px;
   font-weight: 500;
-  color: var(--dsw-alias-label-primary, inherit);
+  color: var(--dsw-alias-label-primary);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 .dsh-files-flat-parent {
   font-size: 10.5px;
-  color: var(--dsw-alias-label-tertiary, #8c9ba5);
+  color: var(--dsw-alias-label-tertiary);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  opacity: 0.8;
 }
 .dsh-files-jump-hint {
   font-size: 10px;
-  color: var(--dsw-alias-brand-primary, #4b70e2);
+  color: var(--dsw-alias-state-business-primary);
   opacity: 0;
   transition: opacity 0.12s ease;
   margin-right: 6px;
@@ -1988,49 +2015,16 @@ function GlobalFilesStyle(): JSX.Element {
   white-space: nowrap;
 }
 .dsh-files-flat-row:hover .dsh-files-jump-hint {
-  opacity: 0.85;
+  opacity: 0.9;
 }
 .dsh-files-flat-row.is-directory:hover {
-  background: color-mix(in srgb, var(--dsw-alias-brand-primary, #4b70e2) 6%, transparent);
-}
-.dsh-files-action-btn {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 3px;
-  height: 20px;
-  padding: 0 5px;
-  border: 1px solid var(--dsw-alias-border-l2, rgba(118,137,166,.25));
-  border-radius: 3px;
-  background: var(--dsw-alias-container-bg, var(--dsw-alias-bg-base, #ffffff));
-  color: var(--dsw-alias-label-secondary, #6f7f9b);
-  cursor: pointer;
-  transition: all 0.12s ease;
-}
-.dsh-files-action-btn:hover {
-  color: var(--dsw-alias-label-primary, inherit);
-  border-color: var(--dsw-alias-border-l3, rgba(118,137,166,.4));
-  background: var(--dsw-alias-interactive-bg-hover, rgba(100,120,150,.12));
-}
-.dsh-files-action-at {
-  color: var(--dsw-alias-brand-primary, #4b70e2);
-  border-color: color-mix(in srgb, var(--dsw-alias-brand-primary, #4b70e2) 30%, transparent);
-  background: color-mix(in srgb, var(--dsw-alias-brand-primary, #4b70e2) 8%, transparent);
-}
-.dsh-files-action-at:hover {
-  color: #ffffff;
-  background: var(--dsw-alias-brand-primary, #4b70e2);
-  border-color: var(--dsw-alias-brand-primary, #4b70e2);
-}
-.dsh-files-action-at-text {
-  font-size: 10px;
-  font-weight: 600;
+  background: color-mix(in srgb, var(--dsw-alias-state-business-primary) 8%, transparent);
 }
 
 /* ── Highlight & Toast ── */
 .dsh-files-highlight {
-  background: color-mix(in srgb, var(--dsw-alias-brand-primary, #4b70e2) 25%, transparent);
-  color: var(--dsw-alias-brand-primary, #4b70e2);
+  background: color-mix(in srgb, var(--dsw-alias-state-business-primary) 22%, transparent);
+  color: var(--dsw-alias-state-business-primary);
   font-weight: 600;
   border-radius: 2px;
   padding: 0 1px;
@@ -2044,12 +2038,12 @@ function GlobalFilesStyle(): JSX.Element {
   align-items: center;
   gap: 6px;
   padding: 6px 12px;
-  background: var(--dsw-alias-label-primary, #17233c);
-  color: var(--dsw-alias-bg-base, #ffffff);
+  background: var(--dsw-alias-label-primary);
+  color: var(--dsw-alias-fill-base, #ffffff);
   font-size: 11px;
   border-radius: 99px;
-  box-shadow: 0 4px 16px rgba(0,0,0,.25);
-  animation: dsh-files-fade-in 0.15s ease;
+  box-shadow: 0 4px 16px rgba(0,0,0,0.22);
+  animation: dsh-files-fade-in 0.16s cubic-bezier(0.16, 1, 0.3, 1);
   z-index: 100;
   pointer-events: none;
   white-space: nowrap;
@@ -2067,13 +2061,13 @@ function GlobalFilesStyle(): JSX.Element {
   justify-content: center;
   height: 180px;
   gap: 10px;
-  color: var(--dsw-alias-label-secondary, #6f7f9b);
+  color: var(--dsw-alias-label-secondary);
 }
 .dsh-files-spinner {
   width: 18px;
   height: 18px;
-  border: 2px solid var(--dsw-alias-border-l2, rgba(118,137,166,.3));
-  border-top-color: var(--dsw-alias-brand-primary, #4b70e2);
+  border: 2px solid var(--dsw-alias-border-l1);
+  border-top-color: var(--dsw-alias-state-business-primary);
   border-radius: 50%;
   animation: dsh-files-spin 0.8s linear infinite;
 }
@@ -2087,7 +2081,7 @@ function GlobalFilesStyle(): JSX.Element {
   justify-content: center;
   padding: 36px 16px;
   text-align: center;
-  color: var(--dsw-alias-label-secondary, #6f7f9b);
+  color: var(--dsw-alias-label-secondary);
 }
 .dsh-files-empty-icon {
   margin-bottom: 8px;
@@ -2100,7 +2094,7 @@ function GlobalFilesStyle(): JSX.Element {
 }
 .dsh-files-empty-detail {
   font-size: 11.5px;
-  color: var(--dsw-alias-label-tertiary, #8c9ba5);
+  color: var(--dsw-alias-label-tertiary);
 }
 .dsh-files-banner-error {
   display: flex;
@@ -2109,9 +2103,9 @@ function GlobalFilesStyle(): JSX.Element {
   gap: 8px;
   padding: 6px 12px;
   font-size: 11.5px;
-  color: var(--dsw-alias-state-error-primary, #e34c59);
-  background: color-mix(in srgb, var(--dsw-alias-state-error-primary, #e34c59) 10%, transparent);
-  border-bottom: 1px solid var(--dsw-alias-border-l1, rgba(118,137,166,.2));
+  color: var(--dsw-alias-state-danger-primary, #e34c59);
+  background: color-mix(in srgb, var(--dsw-alias-state-danger-primary, #e34c59) 10%, transparent);
+  border-bottom: 0.5px solid var(--dsw-alias-border-l1);
 }
 .dsh-files-banner-close {
   border: none;
@@ -2119,6 +2113,6 @@ function GlobalFilesStyle(): JSX.Element {
   color: inherit;
   cursor: pointer;
 }
-`}</style>
-  )
+`
+  document.head.appendChild(style)
 }

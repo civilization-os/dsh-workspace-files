@@ -120,6 +120,30 @@ export function FileGlyphIcon({ filename, size = 14 }: { filename: string; size?
   } else if (ext === 'yml' || ext === 'yaml') {
     color = '#cb171e'
     badge = 'Y'
+  } else if (ext === 'rs') {
+    color = '#dea584'
+    badge = 'RS'
+  } else if (ext === 'go') {
+    color = '#00add8'
+    badge = 'GO'
+  } else if (ext === 'vue') {
+    color = '#41b883'
+    badge = 'V'
+  } else if (ext === 'svelte') {
+    color = '#ff3e00'
+    badge = 'S'
+  } else if (ext === 'toml') {
+    color = '#9c4121'
+    badge = 'T'
+  } else if (ext === 'sql') {
+    color = '#e38c00'
+    badge = 'SQL'
+  } else if (ext === 'sh' || ext === 'bash' || ext === 'zsh' || ext === 'ps1' || ext === 'bat' || ext === 'cmd') {
+    color = '#4eaa25'
+    badge = '>_'
+  } else if (ext === 'lock') {
+    color = 'var(--dsw-alias-label-tertiary, #8c9ba5)'
+    badge = '🔒'
   }
 
   return (
@@ -155,6 +179,21 @@ export function IconTree({ size = 13 }: { size?: number }): JSX.Element {
   return (
     <svg width={size} height={size} viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round">
       <path d="M2 3h4v4H2zM10 9h4v4h-4zM4 7v6h6" />
+    </svg>
+  )
+}
+
+export function IconChevronRight({ size = 11, className, style }: { size?: number; className?: string; style?: React.CSSProperties }): JSX.Element {
+  return (
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 16 16"
+      fill="currentColor"
+      className={className}
+      style={{ display: 'inline-block', verticalAlign: 'middle', flexShrink: 0, ...style }}
+    >
+      <path fillRule="evenodd" d="M6.22 3.22a.75.75 0 0 1 1.06 0l4.25 4.25a.75.75 0 0 1 0 1.06l-4.25 4.25a.751.751 0 0 1-1.042-.018.751.751 0 0 1-.018-1.042L9.94 8 6.22 4.28a.75.75 0 0 1 0-1.06z" />
     </svg>
   )
 }

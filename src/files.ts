@@ -48,6 +48,20 @@ const DEFAULT_IGNORED_DIRS = new Set([
   'temp',
   'logs',
   '.dsh',
+  '.yarn',
+  '.vite',
+  '.parcel-cache',
+  '.rollup.cache',
+  '.tsdown',
+  '.svelte-kit',
+  '.astro',
+  '.mypy_cache',
+  '.pytest_cache',
+  '.ruff_cache',
+  'bin',
+  'obj',
+  '.dart_tool',
+  '.gemini',
 ])
 
 function isWithin(parent: string, child: string): boolean {
