@@ -107,22 +107,24 @@ export function apply(ctx: Context, config: Config = {}): void {
     showHidden: Boolean(config?.showHidden),
   }
 
-  // 关键：向 Host 的 settings 服务注册 settings namespace，使设置面板的前端控制器能够枚举到此插件卡片
+  // 尝试向 Host 的 settings 服务注册 settings namespace（若宿主环境提供标准的 register 方法）
   if ((ctx as any).inject) {
     (ctx as any).inject(['settings'], (scopedCtx: any) => {
       try {
-        const scope = scopedCtx.settings?.register(SETTINGS_NS, Config, {
-          base: liveConfig,
-        })
-        const applyChange = () => {
-          const current = scope?.get?.()
-          if (typeof current?.maxDepth === 'number') liveConfig.maxDepth = current.maxDepth
-          if (typeof current?.showHidden === 'boolean') liveConfig.showHidden = current.showHidden
+        if (typeof scopedCtx?.settings?.register === 'function') {
+          const scope = scopedCtx.settings.register(SETTINGS_NS, Config, {
+            base: liveConfig,
+          })
+          const applyChange = () => {
+            const current = scope?.get?.()
+            if (typeof current?.maxDepth === 'number') liveConfig.maxDepth = current.maxDepth
+            if (typeof current?.showHidden === 'boolean') liveConfig.showHidden = current.showHidden
+          }
+          applyChange()
+          scope?.watch?.(applyChange)
         }
-        applyChange()
-        scope?.watch?.(applyChange)
       } catch (err) {
-        console.warn('[dsh-workspace-files] failed to register settings scope:', err)
+        // 宿主未挂载标准 settings provider 时静默降级为本地及 RPC 配置管理
       }
     })
   }
