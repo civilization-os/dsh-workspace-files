@@ -26,6 +26,9 @@ import {
 
 export const inject = ['slots', 'sidebarRightTabs']
 
+/** 构建时由 tsdown define 注入，避免卡片上的版本号与 package.json 漂移。 */
+declare const __PLUGIN_VERSION__: string
+
 let globalCtx: Context | null = null
 
 const OFFICIAL_FILES_TAB_ID = '@civilization/dsh-workspace-files'
@@ -116,27 +119,16 @@ export function apply(ctx: Context): void {
     }, WorkspaceFilesTabTitle)), 'dsh-workspace-files: official tab title')
   }
 
-  const registerSettingsCard = (targetCtx: any) => {
-    if (!targetCtx?.slots) return
-    targetCtx.effect?.(() => targetCtx.slots.inject('settings.plugin.item', function* () {
-      yield targetCtx.slots.register({
-        name: 'settings.plugin.item',
-        key: 'workspace-files',
-      }, WorkspaceFilesSettingsCard)
-      yield targetCtx.slots.register({
-        name: 'settings.plugin.item',
-        key: '@civilization/dsh-workspace-files',
-      }, WorkspaceFilesSettingsCard)
-    }), 'dsh-workspace-files: settings card')
-  }
-
+  // 设置中心“插件”页的自定义卡片：DSH 0.2.x 用 settings.plugins.tab（list 槽）承载
+  // 各插件自己的配置视图，注册需要 id/order/label；旧版的 settings.plugin.item 槽与
+  // settingsScope 服务在 0.2.0 已不存在。
   if (slots) {
-    registerSettingsCard(ctx)
-  }
-  if ((ctx as any).inject) {
-    (ctx as any).inject(['settingsScope'], (scoped: any) => {
-      registerSettingsCard(scoped)
-    })
+    ctx.effect(() => slots.inject('settings.plugins.tab', () => slots.register({
+      name: 'settings.plugins.tab',
+      id: 'workspace-files',
+      order: 20,
+      label: () => '工作区文件',
+    }, WorkspaceFilesSettingsCard)), 'dsh-workspace-files: settings card')
   }
 }
 
@@ -450,8 +442,8 @@ export function WorkspaceFilesSettingsCard(): JSX.Element {
         <FolderGuideGlyph size={22} />
         <div className="dsh-wf-head-text">
           <div className="dsh-wf-name">
-            <span>工作区文件树</span>
-            <span className="dsh-wf-version">v0.3.2</span>
+            <span>工作区文件</span>
+            <span className="dsh-wf-version">v{__PLUGIN_VERSION__}</span>
           </div>
           <div className="dsh-wf-desc">
             全量项目文件树浏览、即时检索与 @-mention 会话一键引用。

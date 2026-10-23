@@ -1,5 +1,5 @@
-import { exec, spawn } from 'node:child_process'
-import { isAbsolute, resolve } from 'node:path'
+import { spawn } from 'node:child_process'
+import { isAbsolute, relative, resolve, sep } from 'node:path'
 import type { Context } from '@deepseek-ai/cordis'
 import Schema from '@deepseek-ai/schemastery'
 import { scanWorkspaceTree } from './files.js'
@@ -79,6 +79,30 @@ function writeJson(res: any, status: number, body: any): void {
   res.end(data)
 }
 
+/**
+ * 拒绝工作区之外的目标：files.open 的 path 来自请求体，必须是工作区内的相对/绝对路径，
+ * 否则模型或页面脚本可以借宿主进程去打开任意本地路径。
+ */
+function assertInsideWorkspace(cwd: string, fullPath: string): void {
+  const root = resolve(cwd)
+  const target = resolve(fullPath)
+  const rel = relative(root, target)
+  const escaped = rel === '..' || rel.startsWith(`..${sep}`) || isAbsolute(rel)
+  if (escaped) throw new Error('Path must stay inside the workspace.')
+}
+
+/**
+ * 启动系统文件管理器/默认应用。spawn 在命令不存在时会 emit 'error'，
+ * 没有监听器就会变成未捕获异常拖垮宿主进程，因此这里必须兜住。
+ */
+function launch(command: string, args: string[]): void {
+  const child = spawn(command, args, { detached: true, stdio: 'ignore' })
+  child.on('error', (err: any) => {
+    console.warn(`[dsh-workspace-files] failed to launch ${command}:`, err?.message || String(err))
+  })
+  child.unref()
+}
+
 function resolveCwd(ctx: Context, body: Record<string, any>): string {
   if (body.cwd?.trim()) return body.cwd.trim()
   if (body.root?.trim()) return body.root.trim()
@@ -107,27 +131,9 @@ export function apply(ctx: Context, config: Config = {}): void {
     showHidden: Boolean(config?.showHidden),
   }
 
-  // 尝试向 Host 的 settings 服务注册 settings namespace（若宿主环境提供标准的 register 方法）
-  if ((ctx as any).inject) {
-    (ctx as any).inject(['settings'], (scopedCtx: any) => {
-      try {
-        if (typeof scopedCtx?.settings?.register === 'function') {
-          const scope = scopedCtx.settings.register(SETTINGS_NS, Config, {
-            base: liveConfig,
-          })
-          const applyChange = () => {
-            const current = scope?.get?.()
-            if (typeof current?.maxDepth === 'number') liveConfig.maxDepth = current.maxDepth
-            if (typeof current?.showHidden === 'boolean') liveConfig.showHidden = current.showHidden
-          }
-          applyChange()
-          scope?.watch?.(applyChange)
-        }
-      } catch (err) {
-        // 宿主未挂载标准 settings provider 时静默降级为本地及 RPC 配置管理
-      }
-    })
-  }
+  // 设置表单由 DSH 从本插件导出的 Config schema 自动生成（Host 侧 settings.describe()），
+  // 无需也不存在插件侧的 settings.register()：DSH 的 settings 服务只提供
+  // describe/update/replace/mutate/configure，namespace 就是 profile 里的 entry id。
 
   const webServer = (ctx as any).webServer
   if (!webServer) return
@@ -169,31 +175,26 @@ export function apply(ctx: Context, config: Config = {}): void {
         }
 
         const fullPath = isAbsolute(rawPath) ? rawPath : resolve(cwd, rawPath)
+        assertInsideWorkspace(cwd, fullPath)
         const action = body.action || 'reveal'
         const isDirectory = Boolean(body.isDirectory)
 
         if (process.platform === 'win32') {
           const winPath = fullPath.replace(/\//g, '\\')
-          if (action === 'reveal') {
-            if (isDirectory) {
-              spawn('explorer.exe', [winPath], { detached: true, stdio: 'ignore' }).unref()
-            } else {
-              spawn('explorer.exe', [`/select,${winPath}`], { detached: true, stdio: 'ignore' }).unref()
-            }
-          } else {
-            exec(`start "" "${winPath.replace(/"/g, '\\"')}"`, { windowsHide: true })
-          }
+          // explorer.exe 自己解析路径，不再经过 cmd.exe 的字符串拼接，避免 & | ^ 等注入
+          const args = action === 'reveal' && !isDirectory ? [`/select,${winPath}`] : [winPath]
+          launch('explorer.exe', args)
         } else if (process.platform === 'darwin') {
           if (action === 'reveal') {
-            spawn('open', [isDirectory ? fullPath : '-R', fullPath], { detached: true, stdio: 'ignore' }).unref()
+            launch('open', [isDirectory ? fullPath : '-R', fullPath])
           } else {
-            spawn('open', [fullPath], { detached: true, stdio: 'ignore' }).unref()
+            launch('open', [fullPath])
           }
         } else {
           if (action === 'reveal') {
-            spawn('xdg-open', [isDirectory ? fullPath : resolve(fullPath, '..')], { detached: true, stdio: 'ignore' }).unref()
+            launch('xdg-open', [isDirectory ? fullPath : resolve(fullPath, '..')])
           } else {
-            spawn('xdg-open', [fullPath], { detached: true, stdio: 'ignore' }).unref()
+            launch('xdg-open', [fullPath])
           }
         }
 
