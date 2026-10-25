@@ -1,7 +1,7 @@
 {
   "name": "@civilization/dsh-workspace-files",
   "version": "0.3.4",
-  "description": "Enhanced workspace file tree explorer with fuzzy search and @-mention for DeepSeek Harness.",
+  "description": "全量工作区文件树浏览、模糊即时检索与 @-mention 会话一键引用。",
   "type": "module",
   "main": "lib/index.js",
   "exports": {
