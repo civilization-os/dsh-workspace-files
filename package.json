@@ -1,6 +1,6 @@
 {
   "name": "@civilization/dsh-workspace-files",
-  "version": "0.3.3",
+  "version": "0.3.4",
   "description": "Enhanced workspace file tree explorer with fuzzy search and @-mention for DeepSeek Harness.",
   "type": "module",
   "main": "lib/index.js",
@@ -8,13 +8,17 @@
     ".": "./lib/index.js",
     "./client": "./lib/client.js",
     "./src/*": "./src/*",
-    "./package.json": "./package.json"
+    "./package.json": "./package.json",
+    "./locale/*.json": "./locale/*.json",
+    "./icon": "./icon.svg"
   },
   "files": [
     "lib",
     "src",
     "cordis.patch.yml",
-    "README.md"
+    "README.md",
+    "locale/*.json",
+    "icon.svg"
   ],
   "engines": {
     "node": ">=20"
